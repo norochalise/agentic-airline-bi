@@ -18,12 +18,13 @@ A short log of how the Airline Intelligence Assistant went from "broken after a 
 
 | | Before | Now |
 |---|---|---|
-| Tests | 52 (agent tests broken) | **141**, all passing |
+| Tests | 52 (agent tests broken) | **170**, all passing |
 | Python lines | 8,590 | ~6,500 |
 | `core/agent.py` | 1,021 lines, one ~840-line function | 789 lines in small functions |
 | Places one tool is defined | 7 | **1** (`ToolSpec`) |
 | `PROJECT_ROOT` definitions | 15, some wrong | 1 (`config.py`) |
 | Data-tool call | ~2.3 s (new subprocess) | **0.02 s** (in-process) |
+| Data question types | 1 (origin cancellation rate) | 6 metrics × 6 groupings + delay causes, with charts |
 | Routing eval | 15/15 | 15/15 |
 | Retrieval Hit@3 / MRR (FAISS → reranked, strict labels) | 70% / 0.600 → 90% / 0.750 | unchanged |
 
@@ -167,6 +168,34 @@ A short log of how the Airline Intelligence Assistant went from "broken after a 
 
 **Lesson:** keep running the free checks while working, and save the paid evals for one run at the end of a step. Because the generated prompts were proven identical first, that one paid run was a confirmation rather than a debugging session.
 
+## Step 6: Richer analytics and charts
+
+**Problem:** the data path could answer one question shape, "origin airports by cancellation rate". The dataset holds much more: 149k flights, 211 airports, routes, operating carriers, delay minutes, five delay causes, cancellation codes and diversions.
+
+**What we did**
+- **Two flexible tools, not ten narrow ones:**
+  - `rank_flight_performance` groups by origin, destination, route, carrier, date or weekday; ranks by cancellation rate, on-time rate, average delay, diversion rate or flight count; filters by airport; and compares named groups.
+  - `analyze_delay_causes` breaks down delay minutes and cancellations by cause.
+- The original tool stayed, so the frozen evals still apply. The new ranking reproduces its numbers exactly.
+- **Charts:** data answers now come with a ranked bar chart, a hover/focus tooltip and a table toggle. The chart colour was validated for contrast and colour-blindness in light and dark mode, and every view was checked in a real browser.
+
+**A metric bug caught by checking against an outside source.** My first on-time rate left cancelled and diverted flights out. The DOT report in our own document set counts them as *not on time*. With the DOT rule, the data reproduces the report exactly: **71.7%** for the Delta network and **71.9%** for mainline. The first version would have overstated on-time performance by about 3 points. A test now pins those figures.
+
+**Keeping the model's view stable:** the new tools are offered only to data questions, so the document-question prompt stayed byte-identical.
+
+**Evaluation:** a *new* 8-case analytics eval, kept separate from the frozen sets, passed 8/8, including "compare JFK and LGA". The regression evals stayed at tool selection 15/15, arguments 7/7 and end-to-end 8/8, so the original questions still choose the original tool.
+
+**Lesson:** when a metric has a published definition, reproduce a published number before trusting your own.
+
+## Step 7: Conversation UX
+
+**What we did**
+- **Live progress.** The agent got a small hook that reports every trace event as it happens. A streaming endpoint (`/ask/stream`, Server-Sent Events) turns those events into plain-language steps, and the chat shows them in place of a blind spinner: "Planning a flight-data analysis…" at 2.3 s, "Analyzing flight data…" at 4.3 s, the answer at 6.1 s.
+- **Follow-up questions.** The browser sends the last three exchanges. A single model call rewrites "and what about JFK's on-time rate?" into a standalone question, and routing, tools and evals work unchanged on that question. The answer shows how the question was understood.
+- **Feedback.** 👍/👎 is stored with the run ID, so a bad rating can be joined with its full trace.
+
+**Design choice:** rewriting the question was chosen over passing the chat history to every component. All the earlier work (evals, guards, tool selection) still applies to one self-contained question, and the extra cost is only paid when there *is* history.
+
 ---
 
 ## How we verified without burning API money
@@ -180,6 +209,4 @@ A short log of how the Airline Intelligence Assistant went from "broken after a 
 
 ## What's next
 
-6. **Richer analytics:** more data questions (delays, routes, on-time performance) and charts in the chat.
-7. **Conversation UX:** streamed answers and follow-up questions.
 8. **Ship it:** Docker, CI and a live demo.
