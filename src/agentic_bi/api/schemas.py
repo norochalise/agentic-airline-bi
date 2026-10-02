@@ -5,6 +5,18 @@ from pydantic import BaseModel, ConfigDict, Field
 # Matches the composer's maxlength; bounds the cost of a single request.
 MAX_QUESTION_LENGTH = 2000
 
+# Earlier turns sent with a follow-up question (user + assistant messages).
+MAX_HISTORY_MESSAGES = 6
+MAX_HISTORY_CHARS = 4000
+
+
+class HistoryMessage(BaseModel):
+    """One earlier turn of the conversation."""
+
+    role: Literal["user", "assistant"]
+
+    content: str = Field(max_length=MAX_HISTORY_CHARS)
+
 
 class AskRequest(BaseModel):
     """
@@ -25,6 +37,12 @@ class AskRequest(BaseModel):
                 "airports with at least 1000 flights?"
             )
         ],
+    )
+
+    history: list[HistoryMessage] = Field(
+        default_factory=list,
+        max_length=MAX_HISTORY_MESSAGES,
+        description="Earlier turns, oldest first, so follow-ups can be resolved.",
     )
 
 
@@ -75,6 +93,9 @@ class AskResponse(BaseModel):
 
     answer: str
 
+    # The question the agent answered: a follow-up arrives rewritten.
+    question: str | None = None
+
     selected_skill: str | None
 
     stop_reason: str | None
@@ -96,3 +117,15 @@ class AskResponse(BaseModel):
     sources: list[SourceReference] = Field(default_factory=list)
 
     charts: list[ChartSpec] = Field(default_factory=list)
+
+
+class FeedbackRequest(BaseModel):
+    """A reader's rating of one answer."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    run_id: str = Field(pattern=r"^[0-9a-f-]{8,64}$")
+
+    rating: Literal["up", "down"]
+
+    comment: str | None = Field(default=None, max_length=500)

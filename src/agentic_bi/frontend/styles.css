@@ -861,6 +861,52 @@ textarea {
 
 
 /* =========================================================
+   Follow-ups and feedback
+========================================================= */
+
+.answered-as {
+    margin-bottom: 8px;
+
+    color: var(--text-muted);
+    font-size: 0.8rem;
+    font-style: italic;
+}
+
+.feedback {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+
+    margin-top: 8px;
+
+    color: var(--text-faint);
+    font-size: 0.78rem;
+}
+
+.feedback-button {
+    padding: 2px 8px;
+
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: transparent;
+
+    font-size: 0.85rem;
+    line-height: 1.4;
+    cursor: pointer;
+}
+
+.feedback-button:hover:not(:disabled) {
+    border-color: var(--border-strong);
+    background: var(--surface-muted);
+}
+
+.feedback-button:disabled {
+    opacity: 0.5;
+    cursor: default;
+}
+
+
+/* =========================================================
    Sources
 ========================================================= */
 

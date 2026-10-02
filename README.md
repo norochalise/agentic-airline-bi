@@ -18,6 +18,10 @@
 
 Every answer comes with labelled sources (document page, dataset or URL) and its run details: route, steps, tool calls and run ID.
 
+- **Live progress:** the chat shows each step as it happens ("Searching company documents…", "Analyzing flight data…"), streamed from `POST /ask/stream` as Server-Sent Events.
+- **Follow-up questions:** the browser sends the last three exchanges, and a short model call rewrites "and for JFK?" into a standalone question. The answer shows how it was understood.
+- **Feedback:** 👍/👎 on each answer is appended to `data/feedback.jsonl` with the run ID, so a rating can be matched to its trace.
+
 ## Architecture
 
 ```mermaid
@@ -61,7 +65,7 @@ Retrieval, on 10 source-verified cases with strict answer-bearing labels:
 | MRR@5 | 0.600 | **0.750** |
 | Expanded-context evidence coverage | — | **10/10** |
 
-There are 158 `pytest` tests, and they make no paid API calls. The on-time metric reproduces the DOT Air Travel Consumer Report for July 2026: 71.7% for the Delta network and 71.9% for Delta mainline.
+There are 170 `pytest` tests, and they make no paid API calls. The on-time metric reproduces the DOT Air Travel Consumer Report for July 2026: 71.7% for the Delta network and 71.9% for Delta mainline.
 
 Methodology: [`docs/EVALUATION.md`](docs/EVALUATION.md).
 

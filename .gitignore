@@ -14,3 +14,5 @@ REFACTOR_PLAN.md
 # Coverage data
 .coverage
 htmlcov/
+# Reader feedback on answers
+data/feedback.jsonl

@@ -12,8 +12,9 @@ Each tool call goes through handle_tool_call (guards) and execute_tool
 """
 
 import json
+import logging
 from collections import Counter
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -23,6 +24,7 @@ from agentic_bi.config import MAX_STEPS, MAX_TOOL_CALLS, openai_model
 from agentic_bi.core.action_guard import enforce_action_policy
 from agentic_bi.core.checkpoint import create_checkpoint
 from agentic_bi.core.clients import get_openai_client
+from agentic_bi.core.followup import condense_question
 from agentic_bi.core.interaction import classify_interaction
 from agentic_bi.core.interaction_response import build_interaction_response
 from agentic_bi.core.observability import (
@@ -52,6 +54,8 @@ from agentic_bi.tools.registry import (
     ToolSpec,
     get_tool_specs_for_skill,
 )
+
+logger = logging.getLogger(__name__)
 
 INTENT_TO_SKILL = {
     "airline_knowledge": "knowledge-analysis",
@@ -201,6 +205,10 @@ class AgentRun:
     verbose: bool = False
     intent: str | None = None
 
+    # Optional progress listener, e.g. the streaming API. Receives every
+    # trace event as it happens.
+    on_event: Callable[[str, dict[str, Any]], None] | None = None
+
     # Executions (including failures) per tool name and per tool category.
     counts: Counter[str] = field(default_factory=Counter)
     category_counts: Counter[str] = field(default_factory=Counter)
@@ -208,6 +216,14 @@ class AgentRun:
 
     def event(self, event_type: str, **data: Any) -> None:
         add_event(self.trace, event_type, **data)
+
+        if self.on_event is not None:
+            try:
+                self.on_event(event_type, data)
+            except Exception:
+                # A broken listener (say, a closed browser) must not stop
+                # the run; the trace still records everything.
+                logger.warning("Progress listener failed", exc_info=True)
 
     def log(self, *values: Any) -> None:
         if self.verbose:
@@ -253,12 +269,18 @@ def run_agent(
     client: Any = None,
     store: RunStore | None = None,
     tools: Mapping[str, ToolSpec] | None = None,
+    history: list[dict[str, str]] | None = None,
+    on_event: Callable[[str, dict[str, Any]], None] | None = None,
 ) -> AgentResult:
     """
     Run the Agentic BI application for one user question.
 
     `client`, `store` and `tools` default to the shared OpenAI client,
     on-disk run storage and the tool registry; tests pass fakes.
+
+    `history` holds earlier turns ({"role", "content"}); a follow-up such
+    as "and for JFK?" is first rewritten into a standalone question.
+    `on_event` receives progress events while the run is in flight.
     """
 
     run = AgentRun(
@@ -268,9 +290,17 @@ def run_agent(
         store=store if store is not None else default_run_store(),
         tools=tools if tools is not None else TOOL_REGISTRY,
         verbose=verbose,
+        on_event=on_event,
     )
 
     run.event("agent_started")
+
+    if history:
+        standalone = condense_question(question, history, client=run.client)
+
+        if standalone != question:
+            run.state.goal = standalone
+            run.event("question_rewritten", original=question, standalone=standalone)
 
     early_result = interaction_gate(run)
 

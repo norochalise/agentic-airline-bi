@@ -441,7 +441,7 @@ function addAssistantMessage() {
     const typing = element("div", "typing");
     const dots = element("span", "dots");
     dots.append(element("span"), element("span"), element("span"));
-    typing.append(dots, element("span", "", "Analyzing…"));
+    typing.append(dots, element("span", "typing-label", "Reading the question…"));
 
     body.appendChild(typing);
     message.appendChild(body);
@@ -451,8 +451,72 @@ function addAssistantMessage() {
 }
 
 
-function fillAssistantMessage(body, data, elapsedSeconds) {
-    body.replaceChildren(renderMarkdown(data.answer));
+function setProgress(body, message) {
+    const label = body.querySelector(".typing-label");
+
+    if (label) {
+        label.textContent = message;
+    }
+}
+
+
+function renderFeedback(runId) {
+    const box = element("div", "feedback");
+    box.appendChild(element("span", "", "Was this helpful?"));
+
+    for (const [rating, symbol, label] of [
+        ["up", "👍", "Helpful"],
+        ["down", "👎", "Not helpful"],
+    ]) {
+        const button = element("button", "feedback-button", symbol);
+        button.type = "button";
+        button.setAttribute("aria-label", label);
+        button.title = label;
+
+        button.addEventListener("click", async () => {
+            for (const other of box.querySelectorAll("button")) {
+                other.disabled = true;
+            }
+
+            try {
+                const response = await fetch("/feedback", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ run_id: runId, rating }),
+                });
+
+                box.replaceChildren(
+                    element(
+                        "span",
+                        "",
+                        response.ok
+                            ? "Thanks for the feedback."
+                            : "Feedback could not be saved."
+                    )
+                );
+            } catch {
+                box.replaceChildren(element("span", "", "Feedback could not be saved."));
+            }
+        });
+
+        box.appendChild(button);
+    }
+
+    return box;
+}
+
+
+function fillAssistantMessage(body, data, elapsedSeconds, askedQuestion) {
+    body.replaceChildren();
+
+    // A follow-up is answered as a rewritten, standalone question.
+    if (data.question && data.question !== askedQuestion) {
+        body.appendChild(
+            element("div", "answered-as", `Answered as: ${data.question}`)
+        );
+    }
+
+    body.appendChild(renderMarkdown(data.answer));
 
     for (const spec of data.charts ?? []) {
         body.appendChild(renderChart(spec));
@@ -465,6 +529,10 @@ function fillAssistantMessage(body, data, elapsedSeconds) {
     }
 
     body.appendChild(renderRunDetails(data, elapsedSeconds));
+
+    if (data.run_id) {
+        body.appendChild(renderFeedback(data.run_id));
+    }
 }
 
 
@@ -504,6 +572,63 @@ function setBusy(isBusy) {
 }
 
 
+// Earlier turns sent with each question so follow-ups can be resolved.
+// The server accepts at most 6 messages (3 exchanges).
+const MAX_HISTORY_MESSAGES = 6;
+const MAX_HISTORY_CHARS = 1500;
+
+let conversation = [];
+
+
+function remember(question, answer) {
+    conversation.push(
+        { role: "user", content: question.slice(0, MAX_HISTORY_CHARS) },
+        { role: "assistant", content: answer.slice(0, MAX_HISTORY_CHARS) }
+    );
+    conversation = conversation.slice(-MAX_HISTORY_MESSAGES);
+}
+
+
+// Read Server-Sent Events from a fetch response (EventSource cannot POST).
+async function readEventStream(response, onEvent) {
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    for (;;) {
+        const { value, done } = await reader.read();
+
+        if (done) {
+            break;
+        }
+
+        buffer += decoder.decode(value, { stream: true });
+
+        let end;
+
+        while ((end = buffer.indexOf("\n\n")) !== -1) {
+            const block = buffer.slice(0, end);
+            buffer = buffer.slice(end + 2);
+
+            let event = "message";
+            let data = "";
+
+            for (const line of block.split("\n")) {
+                if (line.startsWith("event: ")) {
+                    event = line.slice(7);
+                } else if (line.startsWith("data: ")) {
+                    data += line.slice(6);
+                }
+            }
+
+            if (data) {
+                onEvent(event, JSON.parse(data));
+            }
+        }
+    }
+}
+
+
 async function ask(question) {
     startConversation();
     addUserMessage(question);
@@ -516,27 +641,47 @@ async function ask(question) {
     const startedAt = performance.now();
 
     try {
-        const response = await fetch("/ask", {
+        const response = await fetch("/ask/stream", {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
             },
-            body: JSON.stringify({
-                question: question,
-            }),
+            body: JSON.stringify({ question, history: conversation }),
         });
 
         if (!response.ok) {
             throw new Error(await readErrorMessage(response));
         }
 
-        const data = await response.json();
+        let data = null;
+        let failure = null;
+
+        await readEventStream(response, (event, payload) => {
+            if (event === "progress") {
+                setProgress(body, payload.message);
+            } else if (event === "result") {
+                data = payload;
+            } else if (event === "error") {
+                failure = payload.detail;
+            }
+        });
+
+        if (failure) {
+            throw new Error(failure);
+        }
+
+        if (!data) {
+            throw new Error("The answer was interrupted. Please try again.");
+        }
 
         fillAssistantMessage(
             body,
             data,
-            (performance.now() - startedAt) / 1000
+            (performance.now() - startedAt) / 1000,
+            question
         );
+
+        remember(question, data.answer || "");
 
     } catch (error) {
         showAssistantError(
@@ -609,6 +754,7 @@ for (const suggestion of document.querySelectorAll(".suggestion")) {
 
 
 newChatButton.addEventListener("click", () => {
+    conversation = [];
     messages.replaceChildren();
     emptyState.classList.remove("hidden");
     newChatButton.classList.add("hidden");
