@@ -9,7 +9,6 @@ import pytest
 from agentic_bi.core.interaction import InteractionDecision
 from agentic_bi.tools.registry import get_tools_for_skill
 
-
 # -------------------------------------------------------------------
 # Fake model client
 # -------------------------------------------------------------------
@@ -25,11 +24,7 @@ def function_call(name, arguments, call_id):
 
 
 def model_response(response_id, output=None, output_text=""):
-    return SimpleNamespace(
-        id=response_id,
-        output=output or [],
-        output_text=output_text,
-    )
+    return SimpleNamespace(id=response_id, output=output or [], output_text=output_text)
 
 
 class FakeResponses:
@@ -91,24 +86,14 @@ def agent_env(monkeypatch, tmp_path: Path):
         return WEB_RESULT
 
     monkeypatch.setitem(
-        agent_module.FUNCTIONS,
-        "search_private_knowledge",
-        fake_knowledge,
+        agent_module.FUNCTIONS, "search_private_knowledge", fake_knowledge
     )
-    monkeypatch.setitem(
-        agent_module.FUNCTIONS,
-        "search_official_web",
-        fake_web,
+    monkeypatch.setitem(agent_module.FUNCTIONS, "search_official_web", fake_web)
+    monkeypatch.setattr(
+        agent_module, "save_checkpoint", lambda checkpoint: tmp_path / "checkpoint.json"
     )
     monkeypatch.setattr(
-        agent_module,
-        "save_checkpoint",
-        lambda checkpoint: tmp_path / "checkpoint.json",
-    )
-    monkeypatch.setattr(
-        agent_module,
-        "save_trace",
-        lambda trace: tmp_path / "trace.json",
+        agent_module, "save_trace", lambda trace: tmp_path / "trace.json"
     )
     monkeypatch.setenv("OPENAI_MODEL", "test-model")
 
@@ -128,11 +113,7 @@ def agent_env(monkeypatch, tmp_path: Path):
                 reason="Test routing.",
             ),
         )
-        monkeypatch.setattr(
-            agent_module,
-            "select_skill",
-            lambda goal: skill,
-        )
+        monkeypatch.setattr(agent_module, "select_skill", lambda goal: skill)
 
         return client
 
@@ -152,12 +133,8 @@ def test_only_knowledge_analysis_is_offered_web_search():
     assert "search_official_web" in tool_names(
         get_tools_for_skill("knowledge-analysis")
     )
-    assert "search_official_web" not in tool_names(
-        get_tools_for_skill("data-analysis")
-    )
-    assert "search_official_web" not in tool_names(
-        get_tools_for_skill(None)
-    )
+    assert "search_official_web" not in tool_names(get_tools_for_skill("data-analysis"))
+    assert "search_official_web" not in tool_names(get_tools_for_skill(None))
 
 
 # -------------------------------------------------------------------
@@ -198,11 +175,21 @@ def test_web_fallback_runs_after_private_search(agent_env):
         [
             model_response(
                 "r1",
-                [function_call("search_private_knowledge", {"query": "refund rules"}, "c1")],
+                [
+                    function_call(
+                        "search_private_knowledge", {"query": "refund rules"}, "c1"
+                    )
+                ],
             ),
             model_response(
                 "r2",
-                [function_call("search_official_web", {"query": "DOT automatic refund rule"}, "c2")],
+                [
+                    function_call(
+                        "search_official_web",
+                        {"query": "DOT automatic refund rule"},
+                        "c2",
+                    )
+                ],
             ),
             model_response("r3", output_text="Combined answer."),
         ],
@@ -237,14 +224,16 @@ def test_data_analysis_cannot_call_web_search(agent_env):
         [
             model_response(
                 "r1",
-                [function_call("search_official_web", {"query": "cancellations"}, "c1")],
-            ),
+                [
+                    function_call(
+                        "search_official_web", {"query": "cancellations"}, "c1"
+                    )
+                ],
+            )
         ],
     )
 
-    result = agent_module.run_agent(
-        "Which airport has the highest cancellation rate?"
-    )
+    result = agent_module.run_agent("Which airport has the highest cancellation rate?")
 
     assert calls["web"] == 0
     assert result.stop_reason == "blocked_unknown_tool"
@@ -254,33 +243,22 @@ def test_data_analysis_cannot_call_web_search(agent_env):
 
 
 def test_interaction_intent_selects_skill_without_keyword_router(
-    agent_env,
-    monkeypatch,
+    agent_env, monkeypatch
 ):
     agent_module, calls, setup = agent_env
 
     client = setup(
         "knowledge-analysis",
-        [
-            model_response("r1", output_text="Not found in the documents."),
-        ],
+        [model_response("r1", output_text="Not found in the documents.")],
     )
 
     def fail_if_keyword_router_runs(goal):
-        raise AssertionError(
-            "Keyword router must not override a mapped intent."
-        )
+        raise AssertionError("Keyword router must not override a mapped intent.")
 
-    monkeypatch.setattr(
-        agent_module,
-        "select_skill",
-        fail_if_keyword_router_runs,
-    )
+    monkeypatch.setattr(agent_module, "select_skill", fail_if_keyword_router_runs)
 
     # No routing keywords: the old keyword router returned None here.
     result = agent_module.run_agent("when delta company found")
 
     assert result.selected_skill == "knowledge-analysis"
-    assert "search_official_web" in tool_names(
-        client.responses.requests[0]["tools"]
-    )
+    assert "search_official_web" in tool_names(client.responses.requests[0]["tools"])

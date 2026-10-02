@@ -73,10 +73,7 @@ def classify_failures(
             FailureRecord(
                 category="tool_selection_failure",
                 message="The expected tool was not successfully used.",
-                details={
-                    "expected_tool": expected_tool,
-                    "used_tools": used_tools,
-                },
+                details={"expected_tool": expected_tool, "used_tools": used_tools},
             )
         )
 
@@ -89,8 +86,7 @@ def classify_failures(
             FailureRecord(
                 category="argument_failure",
                 message=(
-                    "The expected tool arguments did not match "
-                    "the observed arguments."
+                    "The expected tool arguments did not match the observed arguments."
                 ),
                 details={
                     "expected_arguments": expected_arguments,
@@ -108,12 +104,9 @@ def classify_failures(
             FailureRecord(
                 category="tool_execution_failure",
                 message=(
-                    "The agent recorded one or more execution "
-                    "or validation errors."
+                    "The agent recorded one or more execution or validation errors."
                 ),
-                details={
-                    "errors": errors,
-                },
+                details={"errors": errors},
             )
         )
 
@@ -122,7 +115,6 @@ def classify_failures(
     # ---------------------------------------------------------
 
     if not stop_ok:
-
         guard_stop_reasons = {
             "tool_call_budget_exceeded",
             "blocked_unknown_tool",
@@ -141,10 +133,7 @@ def classify_failures(
 
         else:
             category = "termination_failure"
-            message = (
-                "The agent terminated with an unexpected "
-                "stop reason."
-            )
+            message = "The agent terminated with an unexpected stop reason."
 
         failures.append(
             FailureRecord(
@@ -175,9 +164,7 @@ def classify_failures(
     return failures
 
 
-def summarize_failure_categories(
-    failures: list[FailureRecord],
-) -> dict[str, int]:
+def summarize_failure_categories(failures: list[FailureRecord]) -> dict[str, int]:
     """
     Count failures by category.
 
@@ -187,8 +174,6 @@ def summarize_failure_categories(
     summary: dict[str, int] = {}
 
     for failure in failures:
-        summary[failure.category] = (
-            summary.get(failure.category, 0) + 1
-        )
+        summary[failure.category] = summary.get(failure.category, 0) + 1
 
     return summary

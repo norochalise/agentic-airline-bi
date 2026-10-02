@@ -6,14 +6,11 @@ from types import SimpleNamespace
 import pytest
 
 from agentic_bi.core.interaction import InteractionDecision
-from agentic_bi.tools.delta_current_info import (
-    answer_current_delta_question,
-)
+from agentic_bi.tools.delta_current_info import answer_current_delta_question
 from agentic_bi.tools.delta_official_web import (
     _is_allowed_delta_url,
     search_delta_official_web,
 )
-
 
 # -------------------------------------------------------------------
 # Domain validation
@@ -59,12 +56,7 @@ def test_non_delta_urls_are_rejected(url):
 class FakeExaResult:
     """Minimal Exa search-result object."""
 
-    def __init__(
-        self,
-        title,
-        url,
-        highlights=None,
-    ):
+    def __init__(self, title, url, highlights=None):
         self.title = title
         self.url = url
         self.highlights = highlights or []
@@ -89,11 +81,7 @@ class FakeExa:
 
         FakeExa.last_instance = self
 
-    def search_and_contents(
-        self,
-        query,
-        **kwargs,
-    ):
+    def search_and_contents(self, query, **kwargs):
         self.last_query = query
         self.last_kwargs = kwargs
 
@@ -110,33 +98,21 @@ class FakeExa:
                 FakeExaResult(
                     title="Fake Result",
                     url="https://example.com/not-allowed",
-                    highlights=[
-                        "This result must never be exposed."
-                    ],
+                    highlights=["This result must never be exposed."],
                 ),
             ]
         )
 
 
-def test_search_delta_official_web_filters_non_delta_results(
-    monkeypatch,
-):
+def test_search_delta_official_web_filters_non_delta_results(monkeypatch):
     import agentic_bi.tools.delta_official_web as web_module
 
-    monkeypatch.setenv(
-        "EXA_API_KEY",
-        "test-exa-key",
-    )
+    monkeypatch.setenv("EXA_API_KEY", "test-exa-key")
 
-    monkeypatch.setattr(
-        web_module,
-        "Exa",
-        FakeExa,
-    )
+    monkeypatch.setattr(web_module, "Exa", FakeExa)
 
     result = search_delta_official_web(
-        "What is Delta's current baggage policy?",
-        num_results=3,
+        "What is Delta's current baggage policy?", num_results=3
     )
 
     assert result["provider"] == "exa"
@@ -148,14 +124,9 @@ def test_search_delta_official_web_filters_non_delta_results(
 
     returned = result["results"][0]
 
-    assert (
-        returned["url"]
-        == "https://www.delta.com/us/en/baggage/overview"
-    )
+    assert returned["url"] == "https://www.delta.com/us/en/baggage/overview"
 
-    assert returned["title"] == (
-        "Baggage Policy and Fees | Delta Air Lines"
-    )
+    assert returned["title"] == ("Baggage Policy and Fees | Delta Air Lines")
 
     assert returned["highlights"] == [
         "First checked bag fee is $45.",
@@ -167,10 +138,7 @@ def test_search_delta_official_web_filters_non_delta_results(
     assert exa is not None
     assert exa.api_key == "test-exa-key"
 
-    assert (
-        exa.last_query
-        == "What is Delta's current baggage policy?"
-    )
+    assert exa.last_query == "What is Delta's current baggage policy?"
 
     assert exa.last_kwargs["num_results"] == 3
 
@@ -184,36 +152,18 @@ def test_search_delta_official_web_filters_non_delta_results(
     assert exa.last_kwargs["highlights"] is True
 
 
-def test_search_delta_official_web_rejects_empty_query(
-    monkeypatch,
-):
-    monkeypatch.setenv(
-        "EXA_API_KEY",
-        "test-exa-key",
-    )
+def test_search_delta_official_web_rejects_empty_query(monkeypatch):
+    monkeypatch.setenv("EXA_API_KEY", "test-exa-key")
 
-    with pytest.raises(
-        ValueError,
-        match="must not be empty",
-    ):
+    with pytest.raises(ValueError, match="must not be empty"):
         search_delta_official_web("   ")
 
 
-def test_search_delta_official_web_requires_exa_key(
-    monkeypatch,
-):
-    monkeypatch.delenv(
-        "EXA_API_KEY",
-        raising=False,
-    )
+def test_search_delta_official_web_requires_exa_key(monkeypatch):
+    monkeypatch.delenv("EXA_API_KEY", raising=False)
 
-    with pytest.raises(
-        RuntimeError,
-        match="EXA_API_KEY",
-    ):
-        search_delta_official_web(
-            "Current Delta baggage policy"
-        )
+    with pytest.raises(RuntimeError, match="EXA_API_KEY"):
+        search_delta_official_web("Current Delta baggage policy")
 
 
 # -------------------------------------------------------------------
@@ -245,9 +195,7 @@ class FakeModelClient:
         self.responses = FakeResponses()
 
 
-def test_current_info_uses_retrieved_evidence_and_preserves_sources(
-    monkeypatch,
-):
+def test_current_info_uses_retrieved_evidence_and_preserves_sources(monkeypatch):
     import agentic_bi.tools.delta_current_info as current_module
 
     fake_search_result = {
@@ -257,14 +205,8 @@ def test_current_info_uses_retrieved_evidence_and_preserves_sources(
         "result_count": 1,
         "results": [
             {
-                "title": (
-                    "Baggage Policy and Fees | "
-                    "Delta Air Lines"
-                ),
-                "url": (
-                    "https://www.delta.com/"
-                    "us/en/baggage/overview"
-                ),
+                "title": ("Baggage Policy and Fees | Delta Air Lines"),
+                "url": ("https://www.delta.com/us/en/baggage/overview"),
                 "highlights": [
                     "The first checked bag costs $45.",
                     "The second checked bag costs $55.",
@@ -279,16 +221,12 @@ def test_current_info_uses_retrieved_evidence_and_preserves_sources(
         lambda query, num_results=3: fake_search_result,
     )
 
-    monkeypatch.setenv(
-        "OPENAI_MODEL",
-        "test-model",
-    )
+    monkeypatch.setenv("OPENAI_MODEL", "test-model")
 
     client = FakeModelClient()
 
     result = answer_current_delta_question(
-        "What is Delta's current baggage policy?",
-        client=client,
+        "What is Delta's current baggage policy?", client=client
     )
 
     assert "$45" in result["answer"]
@@ -299,14 +237,8 @@ def test_current_info_uses_retrieved_evidence_and_preserves_sources(
     assert result["sources"] == [
         {
             "source_type": "live_official_web",
-            "title": (
-                "Baggage Policy and Fees | "
-                "Delta Air Lines"
-            ),
-            "url": (
-                "https://www.delta.com/"
-                "us/en/baggage/overview"
-            ),
+            "title": ("Baggage Policy and Fees | Delta Air Lines"),
+            "url": ("https://www.delta.com/us/en/baggage/overview"),
         }
     ]
 
@@ -315,25 +247,14 @@ def test_current_info_uses_retrieved_evidence_and_preserves_sources(
     assert request is not None
     assert request["model"] == "test-model"
 
-    assert (
-        "The first checked bag costs $45."
-        in request["input"]
-    )
+    assert "The first checked bag costs $45." in request["input"]
 
-    assert (
-        "The second checked bag costs $55."
-        in request["input"]
-    )
+    assert "The second checked bag costs $55." in request["input"]
 
-    assert (
-        "https://www.delta.com/us/en/baggage/overview"
-        in request["input"]
-    )
+    assert "https://www.delta.com/us/en/baggage/overview" in request["input"]
 
 
-def test_current_info_returns_safe_fallback_when_no_results(
-    monkeypatch,
-):
+def test_current_info_returns_safe_fallback_when_no_results(monkeypatch):
     import agentic_bi.tools.delta_current_info as current_module
 
     monkeypatch.setattr(
@@ -348,16 +269,11 @@ def test_current_info_returns_safe_fallback_when_no_results(
         },
     )
 
-    result = answer_current_delta_question(
-        "What is Delta's latest unknown policy?"
-    )
+    result = answer_current_delta_question("What is Delta's latest unknown policy?")
 
-    assert (
-        result["answer"]
-        == (
-            "I could not verify this from current official "
-            "Delta or U.S. government websites."
-        )
+    assert result["answer"] == (
+        "I could not verify this from current official "
+        "Delta or U.S. government websites."
     )
 
     assert result["sources"] == []
@@ -376,17 +292,10 @@ class FakeAgentClient:
     pass
 
 
-def test_current_info_exits_before_normal_skill_router(
-    monkeypatch,
-    tmp_path: Path,
-):
+def test_current_info_exits_before_normal_skill_router(monkeypatch, tmp_path: Path):
     import agentic_bi.core.agent as agent_module
 
-    monkeypatch.setattr(
-        agent_module,
-        "OpenAI",
-        lambda: FakeAgentClient(),
-    )
+    monkeypatch.setattr(agent_module, "OpenAI", lambda: FakeAgentClient())
 
     monkeypatch.setattr(
         agent_module,
@@ -401,16 +310,11 @@ def test_current_info_exits_before_normal_skill_router(
         agent_module,
         "answer_current_delta_question",
         lambda question: {
-            "answer": (
-                "Current official Delta baggage information."
-            ),
+            "answer": ("Current official Delta baggage information."),
             "sources": [
                 {
                     "title": "Delta baggage policy",
-                    "url": (
-                        "https://www.delta.com/"
-                        "us/en/baggage/overview"
-                    ),
+                    "url": ("https://www.delta.com/us/en/baggage/overview"),
                 }
             ],
             "source_type": "live_official_web",
@@ -419,37 +323,21 @@ def test_current_info_exits_before_normal_skill_router(
     )
 
     def fail_if_skill_router_runs(*args, **kwargs):
-        raise AssertionError(
-            "Skill router must not run for "
-            "current_airline_info."
-        )
+        raise AssertionError("Skill router must not run for current_airline_info.")
+
+    monkeypatch.setattr(agent_module, "select_skill", fail_if_skill_router_runs)
 
     monkeypatch.setattr(
-        agent_module,
-        "select_skill",
-        fail_if_skill_router_runs,
+        agent_module, "save_checkpoint", lambda checkpoint: tmp_path / "checkpoint.json"
     )
 
     monkeypatch.setattr(
-        agent_module,
-        "save_checkpoint",
-        lambda checkpoint: tmp_path / "checkpoint.json",
+        agent_module, "save_trace", lambda trace: tmp_path / "trace.json"
     )
 
-    monkeypatch.setattr(
-        agent_module,
-        "save_trace",
-        lambda trace: tmp_path / "trace.json",
-    )
+    result = agent_module.run_agent("What is Delta's current baggage policy?")
 
-    result = agent_module.run_agent(
-        "What is Delta's current baggage policy?"
-    )
-
-    assert (
-        result.final_answer
-        == "Current official Delta baggage information."
-    )
+    assert result.final_answer == "Current official Delta baggage information."
 
     assert result.selected_skill is None
     assert result.stop_reason == "current_airline_info"

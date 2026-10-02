@@ -27,39 +27,21 @@ class PermanentToolError(RuntimeError):
     """
 
 
-def classify_tool_error(
-    error: Exception,
-) -> str:
+def classify_tool_error(error: Exception) -> str:
     """
     Classify a tool failure for controller decision-making.
     """
 
-    if isinstance(
-        error,
-        (
-            TransientToolError,
-            ToolTimeoutError,
-            ConnectionError,
-        ),
-    ):
+    if isinstance(error, (TransientToolError, ToolTimeoutError, ConnectionError)):
         return "transient_error"
 
-    if isinstance(
-        error,
-        BusinessRuleError,
-    ):
+    if isinstance(error, BusinessRuleError):
         return "business_rule_error"
 
-    if isinstance(
-        error,
-        ValueError,
-    ):
+    if isinstance(error, ValueError):
         return "validation_or_input_error"
 
-    if isinstance(
-        error,
-        PermanentToolError,
-    ):
+    if isinstance(error, PermanentToolError):
         return "permanent_tool_error"
 
     return "unexpected_tool_error"
@@ -86,31 +68,17 @@ def execute_with_retry(
     """
 
     if max_attempts < 1:
-        raise ValueError(
-            "max_attempts must be at least 1"
-        )
+        raise ValueError("max_attempts must be at least 1")
 
-    for attempt in range(
-        1,
-        max_attempts + 1,
-    ):
-
+    for attempt in range(1, max_attempts + 1):
         try:
-
-            return function(
-                *args,
-                **kwargs,
-            )
+            return function(*args, **kwargs)
 
         except retryable_exceptions:
-
             if attempt >= max_attempts:
                 raise
 
-            delay = (
-                base_delay_seconds
-                * (2 ** (attempt - 1))
-            )
+            delay = base_delay_seconds * (2 ** (attempt - 1))
 
             print(
                 f"Transient failure. "
@@ -118,6 +86,4 @@ def execute_with_retry(
                 f"(attempt {attempt + 1}/{max_attempts})"
             )
 
-            time.sleep(
-                delay
-            )
+            time.sleep(delay)

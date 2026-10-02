@@ -5,13 +5,9 @@ from agentic_bi.api.schemas import AskRequest
 
 
 def test_ask_request_accepts_valid_question():
-    request = AskRequest(
-        question="Which airports have the highest cancellation rates?"
-    )
+    request = AskRequest(question="Which airports have the highest cancellation rates?")
 
-    assert request.question == (
-        "Which airports have the highest cancellation rates?"
-    )
+    assert request.question == ("Which airports have the highest cancellation rates?")
 
 
 def test_ask_request_rejects_empty_question():

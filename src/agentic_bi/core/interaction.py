@@ -1,11 +1,13 @@
 """Interaction routing and scope control for the Agentic BI application."""
-from dotenv import load_dotenv
+
 import json
 import os
 from typing import Literal
 
+from dotenv import load_dotenv
 from openai import OpenAI
 from pydantic import BaseModel, Field
+
 load_dotenv()
 
 InteractionIntent = Literal[
@@ -133,8 +135,7 @@ IMPORTANT RULES
 
 
 def classify_interaction(
-    question: str,
-    client: OpenAI | None = None,
+    question: str, client: OpenAI | None = None
 ) -> InteractionDecision:
     """Classify a user request before it enters the main agent."""
 
@@ -169,14 +170,9 @@ def classify_interaction(
                                 "out_of_scope",
                             ],
                         },
-                        "reason": {
-                            "type": "string",
-                        },
+                        "reason": {"type": "string"},
                     },
-                    "required": [
-                        "intent",
-                        "reason",
-                    ],
+                    "required": ["intent", "reason"],
                     "additionalProperties": False,
                 },
             }

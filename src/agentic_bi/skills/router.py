@@ -14,14 +14,11 @@ def select_skill(goal: str) -> str | None:
 
     for skill_name, config in SKILL_REGISTRY.items():
         keyword_score = sum(
-            contains_term(goal, keyword)
-            for keyword in config["keywords"]
+            contains_term(goal, keyword) for keyword in config["keywords"]
         )
 
         phrase_score = sum(
-            3
-            for phrase in config["phrases"]
-            if contains_term(goal, phrase)
+            3 for phrase in config["phrases"] if contains_term(goal, phrase)
         )
 
         scores[skill_name] = keyword_score + phrase_score
@@ -32,9 +29,7 @@ def select_skill(goal: str) -> str | None:
         return None
 
     winners = [
-        skill_name
-        for skill_name, score in scores.items()
-        if score == best_score
+        skill_name for skill_name, score in scores.items() if score == best_score
     ]
 
     if len(winners) != 1:

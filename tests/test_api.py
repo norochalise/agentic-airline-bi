@@ -6,7 +6,6 @@ from agentic_bi.api.app import app
 from agentic_bi.core.agent import AgentResult
 from agentic_bi.core.observability import AgentTrace
 
-
 client = TestClient(app)
 
 
@@ -41,31 +40,21 @@ def test_health_endpoint():
 
 
 def test_ask_rejects_empty_question():
-    response = client.post(
-        "/ask",
-        json={"question": ""},
-    )
+    response = client.post("/ask", json={"question": ""})
 
     assert response.status_code == 422
 
 
 def test_ask_endpoint_with_mocked_agent():
-    question = (
-        "Which airport has the highest "
-        "cancellation rate?"
-    )
+    question = "Which airport has the highest cancellation rate?"
 
     fake_trace = AgentTrace(
-        run_id="test-run-123",
-        question=question,
-        started_at="2026-01-01T00:00:00+00:00",
+        run_id="test-run-123", question=question, started_at="2026-01-01T00:00:00+00:00"
     )
 
     fake_result = AgentResult(
         goal=question,
-        final_answer=(
-            "LGA has the highest cancellation rate."
-        ),
+        final_answer=("LGA has the highest cancellation rate."),
         selected_skill="data-analysis",
         stop_reason="final_answer",
         step_count=1,
@@ -77,21 +66,15 @@ def test_ask_endpoint_with_mocked_agent():
     )
 
     with patch(
-        "agentic_bi.api.app.run_agent",
-        return_value=fake_result,
+        "agentic_bi.api.app.run_agent", return_value=fake_result
     ) as mock_run_agent:
-        response = client.post(
-            "/ask",
-            json={"question": question},
-        )
+        response = client.post("/ask", json={"question": question})
 
     assert response.status_code == 200
 
     body = response.json()
 
-    assert body["answer"] == (
-        "LGA has the highest cancellation rate."
-    )
+    assert body["answer"] == ("LGA has the highest cancellation rate.")
     assert body["selected_skill"] == "data-analysis"
     assert body["stop_reason"] == "final_answer"
     assert body["run_id"] == "test-run-123"
@@ -101,10 +84,8 @@ def test_ask_endpoint_with_mocked_agent():
     assert body["data_analysis_count"] == 1
     assert body["error_count"] == 0
 
-    mock_run_agent.assert_called_once_with(
-        question=question,
-        verbose=False,
-    )
+    mock_run_agent.assert_called_once_with(question=question, verbose=False)
+
 
 def test_frontend_assets_require_revalidation():
     for path in ("/", "/static/styles.css", "/static/app.js"):

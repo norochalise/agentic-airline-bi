@@ -3,16 +3,12 @@
 from agentic_bi.core.interaction import InteractionIntent
 from agentic_bi.core.text_match import contains_term
 
-
 APP_NAME = "Airline Intelligence Assistant"
 PROJECT_NAME = "Agentic Business Intelligence"
 BUILDER_NAME = "Noro Insight"
 
 
-def build_interaction_response(
-    intent: InteractionIntent,
-    question: str,
-) -> str | None:
+def build_interaction_response(intent: InteractionIntent, question: str) -> str | None:
     """Return a bounded response when the main BI agent is not required."""
 
     if intent == "conversation":

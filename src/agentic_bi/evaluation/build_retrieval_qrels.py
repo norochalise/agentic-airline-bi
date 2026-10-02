@@ -4,7 +4,6 @@ from typing import Any
 
 from agentic_bi.tools.knowledge_search import _load_retrieval_assets
 
-
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 EVAL_FILE = PROJECT_ROOT / "evals" / "retrieval_cases.json"
@@ -19,10 +18,7 @@ def normalize_source(source: str) -> str:
     return source.replace("\\", "/").split("/")[-1]
 
 
-def is_candidate_chunk(
-    chunk: dict[str, Any],
-    case: dict[str, Any],
-) -> bool:
+def is_candidate_chunk(chunk: dict[str, Any], case: dict[str, Any]) -> bool:
 
     if normalize_source(chunk["source"]) != case["expected_document"]:
         return False
@@ -48,11 +44,7 @@ def main() -> None:
     print("=" * 80)
 
     for case in cases:
-        candidates = [
-            chunk
-            for chunk in chunks
-            if is_candidate_chunk(chunk, case)
-        ]
+        candidates = [chunk for chunk in chunks if is_candidate_chunk(chunk, case)]
 
         print()
         print("=" * 80)

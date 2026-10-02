@@ -1,5 +1,4 @@
 import numpy as np
-
 from sentence_transformers import SentenceTransformer
 
 
@@ -17,10 +16,7 @@ def semantic_search(
     to be calculated using a dot product.
     """
 
-    query_embedding = model.encode(
-        query,
-        normalize_embeddings=True,
-    )
+    query_embedding = model.encode(query, normalize_embeddings=True)
 
     scores = chunk_embeddings @ query_embedding
 

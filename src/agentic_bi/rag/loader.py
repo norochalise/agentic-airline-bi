@@ -1,4 +1,5 @@
 from pathlib import Path
+
 import pymupdf
 
 
@@ -11,17 +12,11 @@ def load_text_document(file_path: Path) -> dict:
         raise FileNotFoundError(f"Document not found: {file_path}")
 
     if file_path.suffix.lower() != ".txt":
-        raise ValueError(
-            f"Unsupported document type: {file_path.suffix}"
-        )
+        raise ValueError(f"Unsupported document type: {file_path.suffix}")
 
     text = file_path.read_text(encoding="utf-8")
 
-    return {
-        "source": file_path.name,
-        "path": str(file_path),
-        "text": text,
-    }
+    return {"source": file_path.name, "path": str(file_path), "text": text}
 
 
 def load_pdf_pages(file_path: Path) -> list[dict]:
@@ -33,9 +28,7 @@ def load_pdf_pages(file_path: Path) -> list[dict]:
         raise FileNotFoundError(f"Document not found: {file_path}")
 
     if file_path.suffix.lower() != ".pdf":
-        raise ValueError(
-            f"Unsupported document type: {file_path.suffix}"
-        )
+        raise ValueError(f"Unsupported document type: {file_path.suffix}")
 
     pages = []
 

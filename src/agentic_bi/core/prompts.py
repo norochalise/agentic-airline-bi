@@ -1,7 +1,4 @@
-def build_agent_instructions(
-    selected_skill: str | None,
-    skill_content: str,
-) -> str:
+def build_agent_instructions(selected_skill: str | None, skill_content: str) -> str:
     """
     Build the system instructions for the BI agent.
     """
@@ -93,15 +90,15 @@ Provide a concise, evidence-grounded, business-oriented final response.
 """
 
 
-def build_final_answer_instructions(
-    instructions: str,
-) -> str:
+def build_final_answer_instructions(instructions: str) -> str:
     """
     Add controller instructions that force final synthesis
     after the permitted tool budget has been reached.
     """
 
-    return instructions + """
+    return (
+        instructions
+        + """
 
 The controller has reached the permitted tool-use budget.
 
@@ -114,3 +111,4 @@ Produce the best supported final answer now.
 If the available evidence is insufficient, explicitly state the limitation
 instead of searching again or inventing information.
 """
+    )

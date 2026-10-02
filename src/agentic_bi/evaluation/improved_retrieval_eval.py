@@ -1,13 +1,8 @@
 import json
 from pathlib import Path
 
-from agentic_bi.tools.improved_knowledge_search import (
-    search_private_knowledge_improved,
-)
-from agentic_bi.tools.knowledge_search import (
-    search_private_knowledge,
-)
-
+from agentic_bi.tools.improved_knowledge_search import search_private_knowledge_improved
+from agentic_bi.tools.knowledge_search import search_private_knowledge
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
@@ -32,42 +27,17 @@ CASES_PATH = PROJECT_ROOT / "evals" / "retrieval_cases.json"
 # ============================================================
 
 RELEVANT_CHUNKS = {
-    "retrieval_001": {
-        "delta_domestic_contract_plain_language_2026-08-18:p21:c1",
-    },
-
+    "retrieval_001": {"delta_domestic_contract_plain_language_2026-08-18:p21:c1"},
     # Fragmented evidence.
     # No single chunk contains the complete verified answer.
     "retrieval_002": set(),
-
-    "retrieval_003": {
-        "delta_domestic_contract_plain_language_2026-08-18:p8:c2",
-    },
-
-    "retrieval_004": {
-        "delta_domestic_contract_plain_language_2026-08-18:p19:c2",
-    },
-
-    "retrieval_005": {
-        "delta_customer_service_plan_2026-09-25:c2",
-    },
-
-    "retrieval_006": {
-        "delta_customer_service_plan_2026-09-25:c17",
-    },
-
-    "retrieval_007": {
-        "delta_customer_service_plan_2026-09-25:c12",
-    },
-
-    "retrieval_008": {
-        "delta_2025_form_10k:p5:c2",
-    },
-
-    "retrieval_009": {
-        "delta_2025_form_10k:p20:c4",
-    },
-
+    "retrieval_003": {"delta_domestic_contract_plain_language_2026-08-18:p8:c2"},
+    "retrieval_004": {"delta_domestic_contract_plain_language_2026-08-18:p19:c2"},
+    "retrieval_005": {"delta_customer_service_plan_2026-09-25:c2"},
+    "retrieval_006": {"delta_customer_service_plan_2026-09-25:c17"},
+    "retrieval_007": {"delta_customer_service_plan_2026-09-25:c12"},
+    "retrieval_008": {"delta_2025_form_10k:p5:c2"},
+    "retrieval_009": {"delta_2025_form_10k:p20:c4"},
     "retrieval_010": {
         "dot_september_2026_atcr_july_data:p6:c0",
         "dot_september_2026_atcr_july_data:p8:c0",
@@ -97,7 +67,7 @@ FRAGMENTED_EVIDENCE_GROUPS = {
     "retrieval_002": {
         "delta_domestic_contract_plain_language_2026-08-18:p14:c0",
         "delta_domestic_contract_plain_language_2026-08-18:p14:c1",
-    },
+    }
 }
 
 
@@ -106,19 +76,13 @@ def load_cases() -> list[dict]:
     Load the frozen M14 retrieval evaluation dataset.
     """
 
-    with CASES_PATH.open(
-        "r",
-        encoding="utf-8",
-    ) as file:
+    with CASES_PATH.open("r", encoding="utf-8") as file:
         data = json.load(file)
 
     return data["cases"]
 
 
-def first_relevant_rank(
-    results: list[dict],
-    relevant_chunks: set[str],
-) -> int | None:
+def first_relevant_rank(results: list[dict], relevant_chunks: set[str]) -> int | None:
     """
     Return the rank of the first complete answer-bearing chunk.
 
@@ -137,10 +101,7 @@ def first_relevant_rank(
     return None
 
 
-def hit_at_k(
-    rank: int | None,
-    k: int,
-) -> int:
+def hit_at_k(rank: int | None, k: int) -> int:
     """
     Return 1 if relevant evidence appears within rank K.
     Otherwise return 0.
@@ -152,10 +113,7 @@ def hit_at_k(
     return int(rank <= k)
 
 
-def reciprocal_rank(
-    rank: int | None,
-    max_rank: int = 5,
-) -> float:
+def reciprocal_rank(rank: int | None, max_rank: int = 5) -> float:
     """
     Calculate reciprocal rank.
 
@@ -178,9 +136,7 @@ def reciprocal_rank(
 
 
 def context_contains_evidence(
-    case_id: str,
-    context_results: list[dict],
-    relevant_chunks: set[str],
+    case_id: str, context_results: list[dict], relevant_chunks: set[str]
 ) -> bool:
     """
     Check whether the final expanded RAG context contains
@@ -193,20 +149,14 @@ def context_contains_evidence(
         ALL required chunks must exist together.
     """
 
-    context_ids = {
-        result["chunk_id"]
-        for result in context_results
-    }
+    context_ids = {result["chunk_id"] for result in context_results}
 
     # --------------------------------------------------------
     # Fragmented evidence
     # --------------------------------------------------------
 
     if case_id in FRAGMENTED_EVIDENCE_GROUPS:
-
-        required_chunks = FRAGMENTED_EVIDENCE_GROUPS[
-            case_id
-        ]
+        required_chunks = FRAGMENTED_EVIDENCE_GROUPS[case_id]
 
         return required_chunks.issubset(context_ids)
 
@@ -214,9 +164,7 @@ def context_contains_evidence(
     # Normal answer-bearing evidence
     # --------------------------------------------------------
 
-    return bool(
-        context_ids & relevant_chunks
-    )
+    return bool(context_ids & relevant_chunks)
 
 
 def print_case_result(
@@ -230,41 +178,21 @@ def print_case_result(
     Print one evaluation case.
     """
 
-    baseline_display = (
-        str(baseline_rank)
-        if baseline_rank is not None
-        else "NOT FOUND"
-    )
+    baseline_display = str(baseline_rank) if baseline_rank is not None else "NOT FOUND"
 
-    reranked_display = (
-        str(reranked_rank)
-        if reranked_rank is not None
-        else "NOT FOUND"
-    )
+    reranked_display = str(reranked_rank) if reranked_rank is not None else "NOT FOUND"
 
     print()
     print(case_id)
 
     if fragmented:
-        print(
-            "  Evidence type: FRAGMENTED "
-            "(multiple chunks required)"
-        )
+        print("  Evidence type: FRAGMENTED (multiple chunks required)")
 
-    print(
-        f"  Baseline strict rank: "
-        f"{baseline_display}"
-    )
+    print(f"  Baseline strict rank: {baseline_display}")
 
-    print(
-        f"  Reranked strict rank: "
-        f"{reranked_display}"
-    )
+    print(f"  Reranked strict rank: {reranked_display}")
 
-    print(
-        "  Expanded context evidence:",
-        "YES" if context_hit else "NO",
-    )
+    print("  Expanded context evidence:", "YES" if context_hit else "NO")
 
 
 def main() -> None:
@@ -309,27 +237,16 @@ def main() -> None:
     fragmented_case_count = 0
 
     print("=" * 72)
-    print(
-        "M14 BASELINE VS IMPROVED "
-        "RETRIEVAL EVALUATION"
-    )
+    print("M14 BASELINE VS IMPROVED RETRIEVAL EVALUATION")
     print("=" * 72)
 
-    print(
-        f"Cases: {len(cases)}"
-    )
+    print(f"Cases: {len(cases)}")
 
-    print(
-        "FAISS baseline depth: 5"
-    )
+    print("FAISS baseline depth: 5")
 
-    print(
-        "Improved candidate depth: 15"
-    )
+    print("Improved candidate depth: 15")
 
-    print(
-        "Reranked depth: 5"
-    )
+    print("Reranked depth: 5")
 
     print()
 
@@ -338,20 +255,14 @@ def main() -> None:
     # ========================================================
 
     for case in cases:
-
         # The verified dataset uses "id".
         case_id = case["id"]
 
         question = case["question"]
 
-        relevant_chunks = RELEVANT_CHUNKS[
-            case_id
-        ]
+        relevant_chunks = RELEVANT_CHUNKS[case_id]
 
-        fragmented = (
-            case_id
-            in FRAGMENTED_EVIDENCE_GROUPS
-        )
+        fragmented = case_id in FRAGMENTED_EVIDENCE_GROUPS
 
         if fragmented:
             fragmented_case_count += 1
@@ -360,74 +271,39 @@ def main() -> None:
         # 1. BASELINE FAISS
         # ====================================================
 
-        baseline = search_private_knowledge(
-            query=question,
-            top_k=5,
-        )
+        baseline = search_private_knowledge(query=question, top_k=5)
 
         baseline_rank = first_relevant_rank(
-            results=baseline["results"],
-            relevant_chunks=relevant_chunks,
+            results=baseline["results"], relevant_chunks=relevant_chunks
         )
 
-        baseline_hit_1 += hit_at_k(
-            baseline_rank,
-            1,
-        )
+        baseline_hit_1 += hit_at_k(baseline_rank, 1)
 
-        baseline_hit_3 += hit_at_k(
-            baseline_rank,
-            3,
-        )
+        baseline_hit_3 += hit_at_k(baseline_rank, 3)
 
-        baseline_hit_5 += hit_at_k(
-            baseline_rank,
-            5,
-        )
+        baseline_hit_5 += hit_at_k(baseline_rank, 5)
 
-        baseline_rr += reciprocal_rank(
-            baseline_rank,
-            max_rank=5,
-        )
+        baseline_rr += reciprocal_rank(baseline_rank, max_rank=5)
 
         # ====================================================
         # 2. IMPROVED RERANKED RETRIEVAL
         # ====================================================
 
-        improved = (
-            search_private_knowledge_improved(
-                query=question,
-                candidate_k=15,
-                top_k=5,
-            )
+        improved = search_private_knowledge_improved(
+            query=question, candidate_k=15, top_k=5
         )
 
         reranked_rank = first_relevant_rank(
-            results=improved[
-                "reranked_results"
-            ],
-            relevant_chunks=relevant_chunks,
+            results=improved["reranked_results"], relevant_chunks=relevant_chunks
         )
 
-        reranked_hit_1 += hit_at_k(
-            reranked_rank,
-            1,
-        )
+        reranked_hit_1 += hit_at_k(reranked_rank, 1)
 
-        reranked_hit_3 += hit_at_k(
-            reranked_rank,
-            3,
-        )
+        reranked_hit_3 += hit_at_k(reranked_rank, 3)
 
-        reranked_hit_5 += hit_at_k(
-            reranked_rank,
-            5,
-        )
+        reranked_hit_5 += hit_at_k(reranked_rank, 5)
 
-        reranked_rr += reciprocal_rank(
-            reranked_rank,
-            max_rank=5,
-        )
+        reranked_rr += reciprocal_rank(reranked_rank, max_rank=5)
 
         # ====================================================
         # 3. FINAL EXPANDED CONTEXT
@@ -435,15 +311,11 @@ def main() -> None:
 
         context_hit = context_contains_evidence(
             case_id=case_id,
-            context_results=improved[
-                "context_results"
-            ],
+            context_results=improved["context_results"],
             relevant_chunks=relevant_chunks,
         )
 
-        context_hits += int(
-            context_hit
-        )
+        context_hits += int(context_hit)
 
         # ====================================================
         # CASE OUTPUT
@@ -465,33 +337,16 @@ def main() -> None:
 
     print()
     print("=" * 72)
-    print(
-        "STRICT BASELINE FAISS RESULTS"
-    )
+    print("STRICT BASELINE FAISS RESULTS")
     print("=" * 72)
 
-    print(
-        f"Hit@1: "
-        f"{baseline_hit_1}/{total} "
-        f"= {baseline_hit_1 / total:.1%}"
-    )
+    print(f"Hit@1: {baseline_hit_1}/{total} = {baseline_hit_1 / total:.1%}")
 
-    print(
-        f"Hit@3: "
-        f"{baseline_hit_3}/{total} "
-        f"= {baseline_hit_3 / total:.1%}"
-    )
+    print(f"Hit@3: {baseline_hit_3}/{total} = {baseline_hit_3 / total:.1%}")
 
-    print(
-        f"Hit@5: "
-        f"{baseline_hit_5}/{total} "
-        f"= {baseline_hit_5 / total:.1%}"
-    )
+    print(f"Hit@5: {baseline_hit_5}/{total} = {baseline_hit_5 / total:.1%}")
 
-    print(
-        f"MRR@5: "
-        f"{baseline_rr / total:.3f}"
-    )
+    print(f"MRR@5: {baseline_rr / total:.3f}")
 
     # ========================================================
     # RERANKED RESULTS
@@ -499,33 +354,16 @@ def main() -> None:
 
     print()
     print("=" * 72)
-    print(
-        "STRICT RERANKED RESULTS"
-    )
+    print("STRICT RERANKED RESULTS")
     print("=" * 72)
 
-    print(
-        f"Hit@1: "
-        f"{reranked_hit_1}/{total} "
-        f"= {reranked_hit_1 / total:.1%}"
-    )
+    print(f"Hit@1: {reranked_hit_1}/{total} = {reranked_hit_1 / total:.1%}")
 
-    print(
-        f"Hit@3: "
-        f"{reranked_hit_3}/{total} "
-        f"= {reranked_hit_3 / total:.1%}"
-    )
+    print(f"Hit@3: {reranked_hit_3}/{total} = {reranked_hit_3 / total:.1%}")
 
-    print(
-        f"Hit@5: "
-        f"{reranked_hit_5}/{total} "
-        f"= {reranked_hit_5 / total:.1%}"
-    )
+    print(f"Hit@5: {reranked_hit_5}/{total} = {reranked_hit_5 / total:.1%}")
 
-    print(
-        f"MRR@5: "
-        f"{reranked_rr / total:.3f}"
-    )
+    print(f"MRR@5: {reranked_rr / total:.3f}")
 
     # ========================================================
     # FINAL CONTEXT COVERAGE
@@ -533,21 +371,12 @@ def main() -> None:
 
     print()
     print("=" * 72)
-    print(
-        "EXPANDED CONTEXT EVIDENCE COVERAGE"
-    )
+    print("EXPANDED CONTEXT EVIDENCE COVERAGE")
     print("=" * 72)
 
-    print(
-        f"Evidence coverage: "
-        f"{context_hits}/{total} "
-        f"= {context_hits / total:.1%}"
-    )
+    print(f"Evidence coverage: {context_hits}/{total} = {context_hits / total:.1%}")
 
-    print(
-        f"Fragmented evidence cases: "
-        f"{fragmented_case_count}"
-    )
+    print(f"Fragmented evidence cases: {fragmented_case_count}")
 
     # ========================================================
     # IMPORTANT EVALUATION NOTES
@@ -559,8 +388,7 @@ def main() -> None:
     print("=" * 72)
 
     print(
-        "1. Hit@K and MRR measure only complete "
-        "single-chunk answer-bearing evidence."
+        "1. Hit@K and MRR measure only complete single-chunk answer-bearing evidence."
     )
 
     print(

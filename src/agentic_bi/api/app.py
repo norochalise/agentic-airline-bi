@@ -9,7 +9,6 @@ from fastapi.staticfiles import StaticFiles
 from agentic_bi.api.schemas import AskRequest, AskResponse
 from agentic_bi.core.agent import run_agent
 
-
 app = FastAPI(
     title="Agentic Business Intelligence",
     description=(
@@ -25,10 +24,8 @@ app = FastAPI(
 # Frontend
 # ---------------------------------------------------------------------------
 
-FRONTEND_DIR = (
-    Path(__file__).resolve().parents[1]
-    / "frontend"
-)
+FRONTEND_DIR = Path(__file__).resolve().parents[1] / "frontend"
+
 
 @app.middleware("http")
 async def revalidate_frontend(request, call_next):
@@ -42,71 +39,47 @@ async def revalidate_frontend(request, call_next):
 
     response = await call_next(request)
 
-    if (
-        request.url.path == "/"
-        or request.url.path.startswith("/static/")
-    ):
+    if request.url.path == "/" or request.url.path.startswith("/static/"):
         response.headers["Cache-Control"] = "no-cache"
 
     return response
 
 
-app.mount(
-    "/static",
-    StaticFiles(
-        directory=FRONTEND_DIR
-    ),
-    name="static",
-)
+app.mount("/static", StaticFiles(directory=FRONTEND_DIR), name="static")
 
 
-@app.get(
-    "/",
-    include_in_schema=False,
-)
+@app.get("/", include_in_schema=False)
 def frontend() -> FileResponse:
     """Serve the Agentic BI web interface."""
 
-    return FileResponse(
-        FRONTEND_DIR / "index.html"
-    )
+    return FileResponse(FRONTEND_DIR / "index.html")
 
 
 # ---------------------------------------------------------------------------
 # Health
 # ---------------------------------------------------------------------------
 
+
 @app.get("/health")
 def health() -> dict[str, str]:
     """Return the API health status."""
 
-    return {
-        "status": "ok",
-    }
+    return {"status": "ok"}
 
 
 # ---------------------------------------------------------------------------
 # Agent
 # ---------------------------------------------------------------------------
 
-@app.post(
-    "/ask",
-    response_model=AskResponse,
-)
-def ask_agent(
-    request: AskRequest,
-) -> AskResponse:
+
+@app.post("/ask", response_model=AskResponse)
+def ask_agent(request: AskRequest) -> AskResponse:
     """Run the BI agent for a user question."""
 
-    result = run_agent(
-        question=request.question,
-        verbose=False,
-    )
+    result = run_agent(question=request.question, verbose=False)
 
     if result.trace is None:
-        raise RuntimeError(
-            "Agent execution completed without a trace."
-        )
+        raise RuntimeError("Agent execution completed without a trace.")
 
     return AskResponse(
         answer=result.final_answer,
@@ -115,14 +88,9 @@ def ask_agent(
         run_id=result.trace.run_id,
         step_count=result.step_count,
         tool_call_count=result.tool_call_count,
-        knowledge_search_count=
-            result.knowledge_search_count,
-        data_analysis_count=
-            result.data_analysis_count,
-        web_search_count=
-            result.web_search_count,
-        error_count=len(
-            result.errors
-        ),
+        knowledge_search_count=result.knowledge_search_count,
+        data_analysis_count=result.data_analysis_count,
+        web_search_count=result.web_search_count,
+        error_count=len(result.errors),
         sources=result.sources,
     )

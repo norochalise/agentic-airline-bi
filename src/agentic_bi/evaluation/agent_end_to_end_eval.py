@@ -9,43 +9,30 @@ from agentic_bi.evaluation.failure_analysis import (
     summarize_failure_categories,
 )
 
-
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
-CASES_PATH = (
-    PROJECT_ROOT
-    / "evals"
-    / "agent_end_to_end_cases.json"
-)
+CASES_PATH = PROJECT_ROOT / "evals" / "agent_end_to_end_cases.json"
 
 
 def load_cases() -> list[dict[str, Any]]:
     """Load the frozen M15 end-to-end evaluation cases."""
 
-    with CASES_PATH.open(
-        "r",
-        encoding="utf-8",
-    ) as file:
+    with CASES_PATH.open("r", encoding="utf-8") as file:
         data = json.load(file)
 
     return data["cases"]
 
 
-def get_used_tools(
-    observations: list[dict[str, Any]],
-) -> list[str]:
+def get_used_tools(observations: list[dict[str, Any]]) -> list[str]:
     """Return successfully executed tool names."""
 
     return [
-        observation["tool"]
-        for observation in observations
-        if "tool" in observation
+        observation["tool"] for observation in observations if "tool" in observation
     ]
 
 
 def find_tool_observation(
-    observations: list[dict[str, Any]],
-    expected_tool: str,
+    observations: list[dict[str, Any]], expected_tool: str
 ) -> dict[str, Any] | None:
     """Find the first successful observation for a tool."""
 
@@ -57,8 +44,7 @@ def find_tool_observation(
 
 
 def arguments_match(
-    actual_arguments: dict[str, Any],
-    expected_arguments: dict[str, Any] | None,
+    actual_arguments: dict[str, Any], expected_arguments: dict[str, Any] | None
 ) -> bool:
     """
     Check deterministic arguments.
@@ -78,18 +64,12 @@ def arguments_match(
     return True
 
 
-def answer_contains_required_facts(
-    answer: str,
-    required_facts: list[str],
-) -> bool:
+def answer_contains_required_facts(answer: str, required_facts: list[str]) -> bool:
     """Check simple required factual markers in final answer."""
 
     normalized_answer = answer.lower()
 
-    return all(
-        str(fact).lower() in normalized_answer
-        for fact in required_facts
-    )
+    return all(str(fact).lower() in normalized_answer for fact in required_facts)
 
 
 def yes_no(value: bool) -> str:
@@ -98,9 +78,7 @@ def yes_no(value: bool) -> str:
     return "PASS" if value else "FAIL"
 
 
-def print_failure_record(
-    failure: FailureRecord,
-) -> None:
+def print_failure_record(failure: FailureRecord) -> None:
     """Print one classified failure."""
 
     print(f"    Category: {failure.category}")
@@ -136,21 +114,15 @@ def main() -> None:
     print()
 
     for index, case in enumerate(cases, start=1):
-
         case_id = case["id"]
         question = case["question"]
 
         expected_skill = case["expected_skill"]
         expected_tool = case["expected_tool"]
         expected_arguments = case["expected_arguments"]
-        expected_stop_reason = case[
-            "expected_stop_reason"
-        ]
+        expected_stop_reason = case["expected_stop_reason"]
 
-        required_facts = case.get(
-            "answer_must_contain",
-            [],
-        )
+        required_facts = case.get("answer_must_contain", [])
 
         print("-" * 72)
         print(f"[{index}/{total}] {case_id}")
@@ -161,16 +133,11 @@ def main() -> None:
         # ====================================================
 
         try:
-            result = run_agent(
-                question=question,
-                verbose=False,
-            )
+            result = run_agent(question=question, verbose=False)
 
         except Exception as exc:
             print("AGENT EXECUTION: FAIL")
-            print(
-                f"Exception: {type(exc).__name__}: {exc}"
-            )
+            print(f"Exception: {type(exc).__name__}: {exc}")
 
             # An exception prevented normal evaluation.
             failure = FailureRecord(
@@ -179,20 +146,12 @@ def main() -> None:
                     "The agent raised an exception before "
                     "the evaluation checks could complete."
                 ),
-                details={
-                    "exception_type": type(exc).__name__,
-                    "error": str(exc),
-                },
+                details={"exception_type": type(exc).__name__, "error": str(exc)},
             )
 
             all_classified_failures.append(failure)
 
-            failed_cases.append(
-                {
-                    "id": case_id,
-                    "failure_records": [failure],
-                }
-            )
+            failed_cases.append({"id": case_id, "failure_records": [failure]})
 
             print_failure_record(failure)
             print()
@@ -203,10 +162,7 @@ def main() -> None:
         # SKILL
         # ====================================================
 
-        skill_ok = (
-            result.selected_skill
-            == expected_skill
-        )
+        skill_ok = result.selected_skill == expected_skill
 
         skill_passes += int(skill_ok)
 
@@ -214,13 +170,9 @@ def main() -> None:
         # TOOL
         # ====================================================
 
-        used_tools = get_used_tools(
-            result.observations
-        )
+        used_tools = get_used_tools(result.observations)
 
-        tool_ok = (
-            expected_tool in used_tools
-        )
+        tool_ok = expected_tool in used_tools
 
         tool_passes += int(tool_ok)
 
@@ -228,42 +180,26 @@ def main() -> None:
         # ARGUMENTS
         # ====================================================
 
-        expected_observation = (
-            find_tool_observation(
-                result.observations,
-                expected_tool,
-            )
-        )
+        expected_observation = find_tool_observation(result.observations, expected_tool)
 
         if expected_observation is None:
             argument_ok = False
             actual_arguments = None
 
         else:
-            actual_arguments = (
-                expected_observation.get(
-                    "arguments",
-                    {},
-                )
-            )
+            actual_arguments = expected_observation.get("arguments", {})
 
             argument_ok = arguments_match(
-                actual_arguments=actual_arguments,
-                expected_arguments=expected_arguments,
+                actual_arguments=actual_arguments, expected_arguments=expected_arguments
             )
 
-        argument_passes += int(
-            argument_ok
-        )
+        argument_passes += int(argument_ok)
 
         # ====================================================
         # STOP REASON
         # ====================================================
 
-        stop_ok = (
-            result.stop_reason
-            == expected_stop_reason
-        )
+        stop_ok = result.stop_reason == expected_stop_reason
 
         stop_passes += int(stop_ok)
 
@@ -271,9 +207,7 @@ def main() -> None:
         # ERRORS
         # ====================================================
 
-        errors_ok = (
-            len(result.errors) == 0
-        )
+        errors_ok = len(result.errors) == 0
 
         error_passes += int(errors_ok)
 
@@ -281,36 +215,21 @@ def main() -> None:
         # FINAL ANSWER
         # ====================================================
 
-        answer_ok = (
-            bool(result.final_answer.strip())
-            and answer_contains_required_facts(
-                answer=result.final_answer,
-                required_facts=required_facts,
-            )
+        answer_ok = bool(
+            result.final_answer.strip()
+        ) and answer_contains_required_facts(
+            answer=result.final_answer, required_facts=required_facts
         )
 
-        answer_passes += int(
-            answer_ok
-        )
+        answer_passes += int(answer_ok)
 
         # ====================================================
         # FULL CASE
         # ====================================================
 
-        full_ok = all(
-            [
-                skill_ok,
-                tool_ok,
-                argument_ok,
-                stop_ok,
-                errors_ok,
-                answer_ok,
-            ]
-        )
+        full_ok = all([skill_ok, tool_ok, argument_ok, stop_ok, errors_ok, answer_ok])
 
-        full_passes += int(
-            full_ok
-        )
+        full_passes += int(full_ok)
 
         # ====================================================
         # M16 FAILURE CLASSIFICATION
@@ -334,9 +253,7 @@ def main() -> None:
             errors=result.errors,
         )
 
-        all_classified_failures.extend(
-            case_failures
-        )
+        all_classified_failures.extend(case_failures)
 
         # ====================================================
         # PRINT CASE DETAILS
@@ -345,63 +262,37 @@ def main() -> None:
         print(
             "Skill:",
             yes_no(skill_ok),
-            f"(expected={expected_skill}, "
-            f"actual={result.selected_skill})",
+            f"(expected={expected_skill}, actual={result.selected_skill})",
         )
 
         print(
-            "Tool:",
-            yes_no(tool_ok),
-            f"(expected={expected_tool}, "
-            f"used={used_tools})",
+            "Tool:", yes_no(tool_ok), f"(expected={expected_tool}, used={used_tools})"
         )
 
-        print(
-            "Arguments:",
-            yes_no(argument_ok),
-        )
+        print("Arguments:", yes_no(argument_ok))
 
         if expected_arguments is not None:
-            print(
-                "  Expected:",
-                expected_arguments,
-            )
+            print("  Expected:", expected_arguments)
 
-            print(
-                "  Actual:",
-                actual_arguments,
-            )
+            print("  Actual:", actual_arguments)
 
         print(
             "Stop reason:",
             yes_no(stop_ok),
-            f"(expected={expected_stop_reason}, "
-            f"actual={result.stop_reason})",
+            f"(expected={expected_stop_reason}, actual={result.stop_reason})",
         )
 
-        print(
-            "No runtime errors:",
-            yes_no(errors_ok),
-            f"(errors={len(result.errors)})",
-        )
+        print("No runtime errors:", yes_no(errors_ok), f"(errors={len(result.errors)})")
 
-        print(
-            "Answer requirements:",
-            yes_no(answer_ok),
-            f"(required={required_facts})",
-        )
+        print("Answer requirements:", yes_no(answer_ok), f"(required={required_facts})")
 
-        print(
-            "FULL CASE:",
-            yes_no(full_ok),
-        )
+        print("FULL CASE:", yes_no(full_ok))
 
         # ====================================================
         # PRINT / RECORD FAILURE DETAILS
         # ====================================================
 
         if case_failures:
-
             print("Failure analysis:")
 
             for failure in case_failures:
@@ -410,10 +301,8 @@ def main() -> None:
             failed_cases.append(
                 {
                     "id": case_id,
-                    "failure_records":
-                        case_failures,
-                    "final_answer":
-                        result.final_answer,
+                    "failure_records": case_failures,
+                    "final_answer": result.final_answer,
                 }
             )
 
@@ -427,35 +316,17 @@ def main() -> None:
     print("M15 EVALUATION SUMMARY")
     print("=" * 72)
 
-    print(
-        f"Skill accuracy: "
-        f"{skill_passes}/{total} "
-        f"= {skill_passes / total:.1%}"
-    )
+    print(f"Skill accuracy: {skill_passes}/{total} = {skill_passes / total:.1%}")
+
+    print(f"Tool success: {tool_passes}/{total} = {tool_passes / total:.1%}")
 
     print(
-        f"Tool success: "
-        f"{tool_passes}/{total} "
-        f"= {tool_passes / total:.1%}"
+        f"Argument success: {argument_passes}/{total} = {argument_passes / total:.1%}"
     )
 
-    print(
-        f"Argument success: "
-        f"{argument_passes}/{total} "
-        f"= {argument_passes / total:.1%}"
-    )
+    print(f"Stop-reason success: {stop_passes}/{total} = {stop_passes / total:.1%}")
 
-    print(
-        f"Stop-reason success: "
-        f"{stop_passes}/{total} "
-        f"= {stop_passes / total:.1%}"
-    )
-
-    print(
-        f"Error-free runs: "
-        f"{error_passes}/{total} "
-        f"= {error_passes / total:.1%}"
-    )
+    print(f"Error-free runs: {error_passes}/{total} = {error_passes / total:.1%}")
 
     print(
         f"Answer requirement success: "
@@ -466,9 +337,7 @@ def main() -> None:
     print()
 
     print(
-        f"FULL END-TO-END PASS RATE: "
-        f"{full_passes}/{total} "
-        f"= {full_passes / total:.1%}"
+        f"FULL END-TO-END PASS RATE: {full_passes}/{total} = {full_passes / total:.1%}"
     )
 
     # ========================================================
@@ -481,70 +350,37 @@ def main() -> None:
     print("=" * 72)
 
     if all_classified_failures:
+        category_summary = summarize_failure_categories(all_classified_failures)
 
-        category_summary = (
-            summarize_failure_categories(
-                all_classified_failures
-            )
-        )
+        print(f"Failed agent cases: {len(failed_cases)}")
 
-        print(
-            f"Failed agent cases: "
-            f"{len(failed_cases)}"
-        )
-
-        print(
-            f"Failure records: "
-            f"{len(all_classified_failures)}"
-        )
+        print(f"Failure records: {len(all_classified_failures)}")
 
         print()
 
         print("Failure categories:")
 
-        for category, count in sorted(
-            category_summary.items()
-        ):
-            print(
-                f"  {category}: {count}"
-            )
+        for category, count in sorted(category_summary.items()):
+            print(f"  {category}: {count}")
 
         print()
         print("Cases to investigate:")
 
         for failed_case in failed_cases:
-
             print()
             print(f"  {failed_case['id']}")
 
-            for failure in (
-                failed_case[
-                    "failure_records"
-                ]
-            ):
-                print(
-                    f"    - {failure.category}: "
-                    f"{failure.message}"
-                )
+            for failure in failed_case["failure_records"]:
+                print(f"    - {failure.category}: {failure.message}")
 
     else:
+        print("No failures detected in the current evaluation set.")
 
-        print(
-            "No failures detected in the "
-            "current evaluation set."
-        )
-
-        print(
-            "Failure classifier produced "
-            "0 failure records."
-        )
+        print("Failure classifier produced 0 failure records.")
 
     print()
 
-    print(
-        "NOTE: These results apply only to the "
-        "current frozen M15 evaluation set."
-    )
+    print("NOTE: These results apply only to the current frozen M15 evaluation set.")
 
 
 if __name__ == "__main__":

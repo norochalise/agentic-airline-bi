@@ -3,33 +3,21 @@ from pathlib import Path
 
 from agentic_bi.core.agent import run_agent
 
-
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
-EVAL_FILE = (
-    PROJECT_ROOT
-    / "evals"
-    / "agent_cases.json"
-)
+EVAL_FILE = PROJECT_ROOT / "evals" / "agent_cases.json"
 
 
 def load_cases() -> list[dict]:
-    with open(
-        EVAL_FILE,
-        "r",
-        encoding="utf-8",
-    ) as file:
+    with open(EVAL_FILE, encoding="utf-8") as file:
         return json.load(file)
 
 
-def get_actual_tools(
-    tool_history: list[dict],
-) -> list[str]:
+def get_actual_tools(tool_history: list[dict]) -> list[str]:
 
     tools = []
 
     for item in tool_history:
-
         tool_name = item.get("tool")
 
         if tool_name is not None:
@@ -48,10 +36,7 @@ def main() -> None:
     print("\n# TOOL SELECTION EVALUATION\n")
 
     for case in cases:
-
-        expected_tool = case.get(
-            "expected_tool"
-        )
+        expected_tool = case.get("expected_tool")
 
         # Skip cases that do not specify
         # an expected tool.
@@ -60,89 +45,44 @@ def main() -> None:
 
         evaluated += 1
 
-        print(
-            f"Running: {case['id']} ..."
-        )
+        print(f"Running: {case['id']} ...")
 
-        result = run_agent(
-            case["question"],
-            verbose=False,
-        )
+        result = run_agent(case["question"], verbose=False)
 
-        actual_tools = get_actual_tools(
-            result.tool_history
-        )
+        actual_tools = get_actual_tools(result.tool_history)
 
-        success = (
-            expected_tool in actual_tools
-        )
+        success = expected_tool in actual_tools
 
         if success:
             passed += 1
 
-        status = (
-            "PASS"
-            if success
-            else "FAIL"
-        )
+        status = "PASS" if success else "FAIL"
 
-        print(
-            f"[{status}] {case['id']}"
-        )
+        print(f"[{status}] {case['id']}")
 
-        print(
-            "Question:",
-            case["question"],
-        )
+        print("Question:", case["question"])
 
-        print(
-            "Expected tool:",
-            expected_tool,
-        )
+        print("Expected tool:", expected_tool)
 
-        print(
-            "Actual tools:",
-            actual_tools,
-        )
+        print("Actual tools:", actual_tools)
 
-        print(
-            "Selected skill:",
-            result.selected_skill,
-        )
+        print("Selected skill:", result.selected_skill)
 
-        print(
-            "Stop reason:",
-            result.stop_reason,
-        )
+        print("Stop reason:", result.stop_reason)
 
         print()
 
-    print(
-        "=" * 50
-    )
+    print("=" * 50)
 
-    print(
-        f"Passed: {passed}/{evaluated}"
-    )
+    print(f"Passed: {passed}/{evaluated}")
 
     if evaluated > 0:
+        accuracy = passed / evaluated * 100
 
-        accuracy = (
-            passed
-            / evaluated
-            * 100
-        )
-
-        print(
-            f"Tool selection accuracy: "
-            f"{accuracy:.2f}%"
-        )
+        print(f"Tool selection accuracy: {accuracy:.2f}%")
 
     else:
-
-        print(
-            "No tool-selection cases found."
-        )
+        print("No tool-selection cases found.")
 
 
 if __name__ == "__main__":

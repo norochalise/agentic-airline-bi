@@ -2,26 +2,14 @@ from functools import lru_cache
 from pathlib import Path
 
 from agentic_bi.rag.embeddings import load_embedding_model
-from agentic_bi.rag.faiss_store import (
-    load_faiss_index,
-    search_faiss,
-)
+from agentic_bi.rag.faiss_store import load_faiss_index, search_faiss
 from agentic_bi.rag.storage import load_embedding_cache
-
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
-RAG_CACHE_DIR = (
-    PROJECT_ROOT
-    / "data"
-    / "processed"
-    / "rag"
-)
+RAG_CACHE_DIR = PROJECT_ROOT / "data" / "processed" / "rag"
 
-FAISS_INDEX_PATH = (
-    RAG_CACHE_DIR
-    / "delta_knowledge.faiss"
-)
+FAISS_INDEX_PATH = RAG_CACHE_DIR / "delta_knowledge.faiss"
 
 
 @lru_cache(maxsize=1)
@@ -32,19 +20,14 @@ def _load_retrieval_assets():
 
     _, chunks = load_embedding_cache(RAG_CACHE_DIR)
 
-    index = load_faiss_index(
-        FAISS_INDEX_PATH
-    )
+    index = load_faiss_index(FAISS_INDEX_PATH)
 
     model = load_embedding_model()
 
     return chunks, index, model
 
 
-def search_private_knowledge(
-    query: str,
-    top_k: int = 5,
-) -> dict:
+def search_private_knowledge(query: str, top_k: int = 5) -> dict:
     """
     Retrieve semantically relevant evidence from the local Delta
     knowledge base using local embeddings and FAISS.
@@ -58,16 +41,9 @@ def search_private_knowledge(
 
     chunks, index, model = _load_retrieval_assets()
 
-    query_embedding = model.encode(
-        query,
-        normalize_embeddings=True,
-    )
+    query_embedding = model.encode(query, normalize_embeddings=True)
 
-    matches = search_faiss(
-        index=index,
-        query_embedding=query_embedding,
-        top_k=top_k,
-    )
+    matches = search_faiss(index=index, query_embedding=query_embedding, top_k=top_k)
 
     results = []
 
@@ -84,7 +60,4 @@ def search_private_knowledge(
             }
         )
 
-    return {
-        "query": query,
-        "results": results,
-    }
+    return {"query": query, "results": results}

@@ -2,7 +2,6 @@ from functools import lru_cache
 
 from sentence_transformers import CrossEncoder
 
-
 RERANKER_MODEL_NAME = "cross-encoder/ms-marco-MiniLM-L6-v2"
 
 
@@ -14,11 +13,7 @@ def load_reranker() -> CrossEncoder:
     return CrossEncoder(RERANKER_MODEL_NAME)
 
 
-def rerank_results(
-    query: str,
-    results: list[dict],
-    top_k: int = 5,
-) -> list[dict]:
+def rerank_results(query: str, results: list[dict], top_k: int = 5) -> list[dict]:
     """
     Rerank retrieved chunks according to their relevance
     to the user's query.
@@ -40,16 +35,13 @@ def rerank_results(
     # [question, candidate chunk]
     #
     # and produces a relevance score.
-    pairs = [
-        [query, result["text"]]
-        for result in results
-    ]
+    pairs = [[query, result["text"]] for result in results]
 
     scores = model.predict(pairs)
 
     reranked = []
 
-    for result, score in zip(results, scores):
+    for result, score in zip(results, scores, strict=True):
         item = result.copy()
 
         # Preserve the original FAISS similarity.
@@ -61,9 +53,6 @@ def rerank_results(
         reranked.append(item)
 
     # Highest reranker score first.
-    reranked.sort(
-        key=lambda item: item["rerank_score"],
-        reverse=True,
-    )
+    reranked.sort(key=lambda item: item["rerank_score"], reverse=True)
 
     return reranked[:top_k]

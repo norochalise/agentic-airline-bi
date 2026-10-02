@@ -4,11 +4,7 @@ from pathlib import Path
 import anyio
 from mcp import Client, StdioServerParameters
 
-from agentic_bi.core.reliability import (
-    PermanentToolError,
-    TransientToolError,
-)
-
+from agentic_bi.core.reliability import PermanentToolError, TransientToolError
 
 # src/agentic_bi/mcp/tools.py -> repository root
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -26,12 +22,7 @@ _TRANSIENT_ERRORS = (
 
 SERVER_PARAMS = StdioServerParameters(
     command="uv",
-    args=[
-        "run",
-        "python",
-        "-m",
-        "agentic_bi.mcp.server",
-    ],
+    args=["run", "python", "-m", "agentic_bi.mcp.server"],
     cwd=PROJECT_ROOT,
 )
 
@@ -42,11 +33,7 @@ def _leaf_errors(exc: BaseException) -> list[BaseException]:
     """
 
     if isinstance(exc, BaseExceptionGroup):
-        return [
-            leaf
-            for inner in exc.exceptions
-            for leaf in _leaf_errors(inner)
-        ]
+        return [leaf for inner in exc.exceptions for leaf in _leaf_errors(inner)]
 
     return [exc]
 
@@ -63,69 +50,45 @@ def _classify_mcp_failure(exc: Exception) -> Exception:
     leaves = _leaf_errors(exc)
 
     if any(isinstance(leaf, FileNotFoundError) for leaf in leaves):
-        return PermanentToolError(
-            f"MCP server could not be started: {exc}"
-        )
+        return PermanentToolError(f"MCP server could not be started: {exc}")
 
     if any(isinstance(leaf, _TRANSIENT_ERRORS) for leaf in leaves):
-        return TransientToolError(
-            f"MCP connection failed: {exc}"
-        )
+        return TransientToolError(f"MCP connection failed: {exc}")
 
-    return PermanentToolError(
-        f"MCP execution failed: {exc}"
-    )
+    return PermanentToolError(f"MCP execution failed: {exc}")
 
 
-async def _call_origin_cancellation_tool(
-    min_flights: int,
-    top_n: int,
-) -> dict:
+async def _call_origin_cancellation_tool(min_flights: int, top_n: int) -> dict:
     """
     Call the Delta cancellation-analysis capability through MCP.
     """
 
     try:
         async with Client(SERVER_PARAMS) as client:
-
             result = await client.call_tool(
                 "top_origin_cancellation_rates",
-                {
-                    "min_flights": min_flights,
-                    "top_n": top_n,
-                },
+                {"min_flights": min_flights, "top_n": top_n},
             )
 
     except Exception as exc:
         raise _classify_mcp_failure(exc) from exc
 
-
     if result.is_error:
-        raise PermanentToolError(
-            "MCP tool returned an error."
-        )
-
+        raise PermanentToolError("MCP tool returned an error.")
 
     if result.structured_content is None:
-        raise PermanentToolError(
-            "MCP tool returned no structured content."
-        )
-
+        raise PermanentToolError("MCP tool returned no structured content.")
 
     return result.structured_content
 
 
 def analyze_top_origin_cancellation_rates_via_mcp(
-    min_flights: int = 500,
-    top_n: int = 5,
+    min_flights: int = 500, top_n: int = 5
 ) -> dict:
     """
     Synchronous adapter for the MCP cancellation-analysis tool.
     """
 
     return asyncio.run(
-        _call_origin_cancellation_tool(
-            min_flights=min_flights,
-            top_n=top_n,
-        )
+        _call_origin_cancellation_tool(min_flights=min_flights, top_n=top_n)
     )

@@ -10,10 +10,7 @@ def test_routes_policy_question_to_knowledge_analysis():
 
 
 def test_routes_data_question_to_data_analysis():
-    question = (
-        "Which airports have the highest "
-        "cancellation rate in the flight data?"
-    )
+    question = "Which airports have the highest cancellation rate in the flight data?"
 
     result = select_skill(question)
 
@@ -26,6 +23,7 @@ def test_unknown_question_returns_none():
     result = select_skill(question)
 
     assert result is None
+
 
 def test_keywords_do_not_match_inside_longer_words():
     # "corporate" contains "rate", "schedule" contains "rule" and

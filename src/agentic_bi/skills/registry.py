@@ -22,7 +22,6 @@ SKILL_REGISTRY = {
             "contract of carriage",
         },
     },
-
     "data-analysis": {
         "description": (
             "Analyze structured business data using deterministic "

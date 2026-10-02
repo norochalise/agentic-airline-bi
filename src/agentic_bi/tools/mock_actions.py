@@ -2,10 +2,7 @@ processed_actions: set[str] = set()
 
 
 def issue_customer_credit(
-    customer_id: str,
-    amount: float,
-    reason: str,
-    idempotency_key: str,
+    customer_id: str, amount: float, reason: str, idempotency_key: str
 ) -> dict:
     """
     Simulate a consequential write action.
@@ -14,24 +11,16 @@ def issue_customer_credit(
     """
 
     if not customer_id.strip():
-        raise ValueError(
-            "customer_id is required"
-        )
+        raise ValueError("customer_id is required")
 
     if amount <= 0:
-        raise ValueError(
-            "amount must be greater than zero"
-        )
+        raise ValueError("amount must be greater than zero")
 
     if not reason.strip():
-        raise ValueError(
-            "reason is required"
-        )
+        raise ValueError("reason is required")
 
     if not idempotency_key.strip():
-        raise ValueError(
-            "idempotency_key is required"
-        )
+        raise ValueError("idempotency_key is required")
 
     if idempotency_key in processed_actions:
         return {
@@ -41,9 +30,7 @@ def issue_customer_credit(
             "idempotency_key": idempotency_key,
         }
 
-    processed_actions.add(
-        idempotency_key
-    )
+    processed_actions.add(idempotency_key)
 
     return {
         "status": "completed",

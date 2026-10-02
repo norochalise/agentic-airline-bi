@@ -1,6 +1,8 @@
 [project]
 name = "agentic-business-intelligence"
 version = "0.1.0"
+description = "Bounded agentic BI assistant over airline flight data, documents and official web sources."
+readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "exa-py>=2.22.2",
@@ -26,8 +28,26 @@ packages = ["src/agentic_bi"]
 [dependency-groups]
 dev = [
     "pytest>=9.1.1",
+    "pytest-cov>=7.1.0",
+    "ruff>=0.16.10",
 ]
 
 [tool.pytest.ini_options]
 addopts = "--basetemp=.pytest_tmp"
 testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py313"
+src = ["src", "tests", "scripts"]
+
+[tool.ruff.format]
+# Collapse short calls that were split one argument per line.
+skip-magic-trailing-comma = true
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["agentic_bi"]
+split-on-trailing-comma = false

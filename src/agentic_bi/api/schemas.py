@@ -9,10 +9,7 @@ class AskRequest(BaseModel):
     question: str = Field(
         ...,
         min_length=1,
-        description=(
-            "Business question to send "
-            "to the Delta BI agent."
-        ),
+        description=("Business question to send to the Delta BI agent."),
         examples=[
             (
                 "Which 3 origin airports have the "
@@ -62,6 +59,4 @@ class AskResponse(BaseModel):
 
     error_count: int
 
-    sources: list[SourceReference] = Field(
-        default_factory=list
-    )
+    sources: list[SourceReference] = Field(default_factory=list)

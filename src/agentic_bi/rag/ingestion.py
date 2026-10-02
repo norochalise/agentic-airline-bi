@@ -1,19 +1,13 @@
 from pathlib import Path
 
 from agentic_bi.rag.chunker import chunk_document
-from agentic_bi.rag.loader import (
-    load_pdf_pages,
-    load_text_document,
-)
-
+from agentic_bi.rag.loader import load_pdf_pages, load_text_document
 
 SUPPORTED_DOCUMENT_TYPES = {".txt", ".pdf"}
 
 
 def ingest_document(
-    file_path: Path,
-    chunk_size: int = 180,
-    overlap: int = 30,
+    file_path: Path, chunk_size: int = 180, overlap: int = 30
 ) -> list[dict]:
     """
     Load and chunk a supported document while preserving retrieval metadata.
@@ -22,9 +16,7 @@ def ingest_document(
     suffix = file_path.suffix.lower()
 
     if suffix not in SUPPORTED_DOCUMENT_TYPES:
-        raise ValueError(
-            f"Unsupported document type: {suffix}"
-        )
+        raise ValueError(f"Unsupported document type: {suffix}")
 
     chunks = []
 
@@ -67,11 +59,7 @@ def ingest_document(
         for index, chunk in enumerate(page_chunks):
             chunks.append(
                 {
-                    "chunk_id": (
-                        f"{file_path.stem}:"
-                        f"p{page['page_number']}:"
-                        f"c{index}"
-                    ),
+                    "chunk_id": (f"{file_path.stem}:p{page['page_number']}:c{index}"),
                     "source": page["source"],
                     "path": page["path"],
                     "page_number": page["page_number"],

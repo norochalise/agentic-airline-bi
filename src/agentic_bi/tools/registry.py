@@ -6,25 +6,16 @@ from agentic_bi.core.schemas import (
     OriginCancellationAnalysisArgs,
     OriginCancellationAnalysisOutput,
 )
-from agentic_bi.mcp.tools import (
-    analyze_top_origin_cancellation_rates_via_mcp,
-)
-from agentic_bi.tools.delta_official_web import (
-    search_delta_official_web,
-)
-from agentic_bi.tools.improved_knowledge_search import (
-    search_private_knowledge_improved,
-)
-
+from agentic_bi.mcp.tools import analyze_top_origin_cancellation_rates_via_mcp
+from agentic_bi.tools.delta_official_web import search_delta_official_web
+from agentic_bi.tools.improved_knowledge_search import search_private_knowledge_improved
 
 # -------------------------------------------------------------------
 # Tool implementations / adapters
 # -------------------------------------------------------------------
 
 
-def run_knowledge_search(
-    query: str,
-) -> dict:
+def run_knowledge_search(query: str) -> dict:
     """
     Retrieve evidence from the local Delta knowledge base.
 
@@ -39,9 +30,7 @@ def run_knowledge_search(
     """
 
     improved_result = search_private_knowledge_improved(
-        query=query,
-        candidate_k=15,
-        top_k=5,
+        query=query, candidate_k=15, top_k=5
     )
 
     # ---------------------------------------------------------------
@@ -69,33 +58,23 @@ def run_knowledge_search(
                 "page_number": item["page_number"],
                 "chunk_id": item["chunk_id"],
                 "score": (
-                    item["faiss_score"]
-                    if item["faiss_score"] is not None
-                    else 0.0
+                    item["faiss_score"] if item["faiss_score"] is not None else 0.0
                 ),
                 "text": item["text"],
             }
         )
 
-    return {
-        "query": query,
-        "results": results,
-    }
+    return {"query": query, "results": results}
 
 
-def run_official_web_search(
-    query: str,
-) -> dict:
+def run_official_web_search(query: str) -> dict:
     """
     Search official Delta and U.S. government websites.
 
     Returns only the fields covered by the tool output contract.
     """
 
-    search_result = search_delta_official_web(
-        query=query,
-        num_results=3,
-    )
+    search_result = search_delta_official_web(query=query, num_results=3)
 
     return {
         "query": query,
@@ -104,8 +83,7 @@ def run_official_web_search(
                 "title": result["title"],
                 "url": result["url"],
                 "highlights": [
-                    str(highlight)
-                    for highlight in result.get("highlights", [])
+                    str(highlight) for highlight in result.get("highlights", [])
                 ],
             }
             for result in search_result.get("results", [])
@@ -135,11 +113,9 @@ TOOLS = [
                         "Focused semantic retrieval query describing "
                         "the evidence required."
                     ),
-                },
+                }
             },
-            "required": [
-                "query",
-            ],
+            "required": ["query"],
             "additionalProperties": False,
         },
         "strict": True,
@@ -164,15 +140,11 @@ TOOLS = [
                 "top_n": {
                     "type": "integer",
                     "description": (
-                        "Number of highest cancellation-rate airports "
-                        "to return."
+                        "Number of highest cancellation-rate airports to return."
                     ),
                 },
             },
-            "required": [
-                "min_flights",
-                "top_n",
-            ],
+            "required": ["min_flights", "top_n"],
             "additionalProperties": False,
         },
         "strict": True,
@@ -196,11 +168,9 @@ TOOLS = [
                         "Focused plain-language query describing the "
                         "official information required."
                     ),
-                },
+                }
             },
-            "required": [
-                "query",
-            ],
+            "required": ["query"],
             "additionalProperties": False,
         },
         "strict": True,
@@ -209,14 +179,10 @@ TOOLS = [
 
 
 # Tools that may never be offered to a structured-data workflow.
-WEB_TOOL_NAMES = {
-    "search_official_web",
-}
+WEB_TOOL_NAMES = {"search_official_web"}
 
 
-def get_tools_for_skill(
-    selected_skill: str | None,
-) -> list[dict]:
+def get_tools_for_skill(selected_skill: str | None) -> list[dict]:
     """
     Return the tool definitions offered to the model for a skill.
 
@@ -227,11 +193,7 @@ def get_tools_for_skill(
     if selected_skill == "knowledge-analysis":
         return TOOLS
 
-    return [
-        tool
-        for tool in TOOLS
-        if tool["name"] not in WEB_TOOL_NAMES
-    ]
+    return [tool for tool in TOOLS if tool["name"] not in WEB_TOOL_NAMES]
 
 
 # -------------------------------------------------------------------
@@ -240,14 +202,9 @@ def get_tools_for_skill(
 
 
 FUNCTIONS = {
-    "search_private_knowledge":
-        run_knowledge_search,
-
-    "analyze_top_origin_cancellation_rates":
-        analyze_top_origin_cancellation_rates_via_mcp,
-
-    "search_official_web":
-        run_official_web_search,
+    "search_private_knowledge": run_knowledge_search,
+    "analyze_top_origin_cancellation_rates": analyze_top_origin_cancellation_rates_via_mcp,  # noqa: E501
+    "search_official_web": run_official_web_search,
 }
 
 
@@ -257,14 +214,9 @@ FUNCTIONS = {
 
 
 INPUT_SCHEMAS = {
-    "search_private_knowledge":
-        KnowledgeSearchArgs,
-
-    "analyze_top_origin_cancellation_rates":
-        OriginCancellationAnalysisArgs,
-
-    "search_official_web":
-        OfficialWebSearchArgs,
+    "search_private_knowledge": KnowledgeSearchArgs,
+    "analyze_top_origin_cancellation_rates": OriginCancellationAnalysisArgs,
+    "search_official_web": OfficialWebSearchArgs,
 }
 
 
@@ -274,14 +226,9 @@ INPUT_SCHEMAS = {
 
 
 OUTPUT_SCHEMAS = {
-    "search_private_knowledge":
-        KnowledgeSearchOutput,
-
-    "analyze_top_origin_cancellation_rates":
-        OriginCancellationAnalysisOutput,
-
-    "search_official_web":
-        OfficialWebSearchOutput,
+    "search_private_knowledge": KnowledgeSearchOutput,
+    "analyze_top_origin_cancellation_rates": OriginCancellationAnalysisOutput,
+    "search_official_web": OfficialWebSearchOutput,
 }
 
 
@@ -291,13 +238,7 @@ OUTPUT_SCHEMAS = {
 
 
 TOOL_POLICIES = {
-    "search_private_knowledge": {
-        "max_attempts": 1,
-    },
-    "analyze_top_origin_cancellation_rates": {
-        "max_attempts": 2,
-    },
-    "search_official_web": {
-        "max_attempts": 2,
-    },
+    "search_private_knowledge": {"max_attempts": 1},
+    "analyze_top_origin_cancellation_rates": {"max_attempts": 2},
+    "search_official_web": {"max_attempts": 2},
 }

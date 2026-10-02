@@ -11,17 +11,10 @@ class FakeClient:
     pass
 
 
-def test_out_of_scope_request_exits_before_agent_tool_loop(
-    monkeypatch,
-    tmp_path: Path,
-):
+def test_out_of_scope_request_exits_before_agent_tool_loop(monkeypatch, tmp_path: Path):
     import agentic_bi.core.agent as agent_module
 
-    monkeypatch.setattr(
-        agent_module,
-        "OpenAI",
-        lambda: FakeClient(),
-    )
+    monkeypatch.setattr(agent_module, "OpenAI", lambda: FakeClient())
 
     monkeypatch.setattr(
         agent_module,
@@ -33,31 +26,19 @@ def test_out_of_scope_request_exits_before_agent_tool_loop(
     )
 
     def fail_if_skill_router_runs(*args, **kwargs):
-        raise AssertionError(
-            "Skill router should not run for out-of-scope requests."
-        )
+        raise AssertionError("Skill router should not run for out-of-scope requests.")
+
+    monkeypatch.setattr(agent_module, "select_skill", fail_if_skill_router_runs)
 
     monkeypatch.setattr(
-        agent_module,
-        "select_skill",
-        fail_if_skill_router_runs,
+        agent_module, "save_checkpoint", lambda checkpoint: tmp_path / "checkpoint.json"
     )
 
     monkeypatch.setattr(
-        agent_module,
-        "save_checkpoint",
-        lambda checkpoint: tmp_path / "checkpoint.json",
+        agent_module, "save_trace", lambda trace: tmp_path / "trace.json"
     )
 
-    monkeypatch.setattr(
-        agent_module,
-        "save_trace",
-        lambda trace: tmp_path / "trace.json",
-    )
-
-    result = agent_module.run_agent(
-        "Write me a poem about Delta flights."
-    )
+    result = agent_module.run_agent("Write me a poem about Delta flights.")
 
     assert result.final_answer
     assert result.selected_skill is None

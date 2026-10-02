@@ -11,32 +11,19 @@ from agentic_bi.core.observability import (
 
 
 def test_trace_lifecycle():
-    trace = create_trace(
-        "Which airports have the highest cancellation rates?"
-    )
+    trace = create_trace("Which airports have the highest cancellation rates?")
 
-    add_event(
-        trace,
-        "skill_selected",
-        skill="data-analysis",
-    )
+    add_event(trace, "skill_selected", skill="data-analysis")
 
-    finish_trace(
-        trace,
-        stop_reason="final_answer",
-    )
+    finish_trace(trace, stop_reason="final_answer")
 
     assert trace.run_id
-    assert trace.question == (
-        "Which airports have the highest cancellation rates?"
-    )
+    assert trace.question == ("Which airports have the highest cancellation rates?")
 
     assert len(trace.events) == 1
 
     assert trace.events[0].event_type == "skill_selected"
-    assert trace.events[0].data == {
-        "skill": "data-analysis",
-    }
+    assert trace.events[0].data == {"skill": "data-analysis"}
 
     assert trace.finished_at is not None
     assert trace.duration_seconds is not None
@@ -56,30 +43,15 @@ def test_execution_timer_measures_elapsed_time():
 
 
 def test_trace_save_and_load(tmp_path):
-    trace = create_trace(
-        "Test trace persistence"
-    )
+    trace = create_trace("Test trace persistence")
 
-    add_event(
-        trace,
-        "tool_completed",
-        tool="test_tool",
-        status="success",
-    )
+    add_event(trace, "tool_completed", tool="test_tool", status="success")
 
-    finish_trace(
-        trace,
-        stop_reason="final_answer",
-    )
+    finish_trace(trace, stop_reason="final_answer")
 
-    trace_path = save_trace(
-        trace,
-        trace_dir=tmp_path,
-    )
+    trace_path = save_trace(trace, trace_dir=tmp_path)
 
-    loaded_trace = load_trace(
-        trace_path
-    )
+    loaded_trace = load_trace(trace_path)
 
     assert trace_path.exists()
 
@@ -89,12 +61,6 @@ def test_trace_save_and_load(tmp_path):
 
     assert len(loaded_trace.events) == 1
 
-    assert (
-        loaded_trace.events[0].event_type
-        == "tool_completed"
-    )
+    assert loaded_trace.events[0].event_type == "tool_completed"
 
-    assert loaded_trace.events[0].data == {
-        "tool": "test_tool",
-        "status": "success",
-    }
+    assert loaded_trace.events[0].data == {"tool": "test_tool", "status": "success"}
