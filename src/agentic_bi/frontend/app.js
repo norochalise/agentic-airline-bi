@@ -2,88 +2,64 @@ const form = document.getElementById("ask-form");
 const questionInput = document.getElementById("question");
 const submitButton = document.getElementById("submit-button");
 
-const loading = document.getElementById("loading");
-const errorBox = document.getElementById("error");
-const result = document.getElementById("result");
+const thread = document.getElementById("thread");
+const messages = document.getElementById("messages");
+const emptyState = document.getElementById("empty-state");
 
-const answer = document.getElementById("answer");
-const selectedSkill = document.getElementById("selected-skill");
-const stopReason = document.getElementById("stop-reason");
-const stepCount = document.getElementById("step-count");
-const toolCallCount = document.getElementById("tool-call-count");
-const knowledgeSearchCount = document.getElementById(
-    "knowledge-search-count"
-);
-const dataAnalysisCount = document.getElementById(
-    "data-analysis-count"
-);
-const webSearchCount = document.getElementById(
-    "web-search-count"
-);
-const errorCount = document.getElementById("error-count");
-const sources = document.getElementById("sources");
-const sourceList = document.getElementById("source-list");
-const runId = document.getElementById("run-id");
+const themeToggle = document.getElementById("theme-toggle");
+const newChatButton = document.getElementById("new-chat");
 
 
-function setLoading(isLoading) {
-    loading.classList.toggle("hidden", !isLoading);
-    submitButton.disabled = isLoading;
+// -------------------------------------------------------------------
+// Labels
+// -------------------------------------------------------------------
 
-    submitButton.textContent = isLoading
-        ? "Analyzing..."
-        : "Ask Agent";
-}
-
-
-function showError(message) {
-    errorBox.textContent = message;
-    errorBox.classList.remove("hidden");
-}
-
-
-function clearError() {
-    errorBox.textContent = "";
-    errorBox.classList.add("hidden");
-}
-
-
-function renderMarkdown(markdownText) {
-    if (!markdownText) {
-        return "";
-    }
-
-    if (
-        typeof marked === "undefined" ||
-        typeof DOMPurify === "undefined"
-    ) {
-        const fallback = document.createElement("div");
-        fallback.textContent = markdownText;
-
-        return fallback.innerHTML;
-    }
-
-    const cleanedMarkdown = markdownText
-        .replace(/&#x20;/gi, " ")
-        .replace(/&nbsp;/gi, " ");
-
-    const html = marked.parse(cleanedMarkdown);
-
-    return DOMPurify.sanitize(html);
-}
-
-
+// Early-exit routes finish before skill routing, so no skill is selected.
 const ROUTE_LABELS = {
     current_airline_info: "official-web",
     interaction_response: "direct-reply",
 };
 
-
-const SOURCE_LABELS = {
-    private_document: ["Document", "document"],
-    dataset: ["Dataset", "dataset"],
-    live_official_web: ["Web", "web"],
+const SOURCE_KINDS = {
+    private_document: { label: "Doc", kind: "document" },
+    dataset: { label: "Data", kind: "dataset" },
+    live_official_web: { label: "Web", kind: "web" },
 };
+
+const DOCUMENT_NAMES = {
+    "delta_2025_form_10k.pdf": "Delta 2025 Form 10-K",
+    "delta_customer_service_plan_2026-09-25.txt": "Customer Service Plan",
+    "delta_domestic_contract_plain_language_2026-08-18.pdf":
+        "Domestic Contract of Carriage",
+    "dot_september_2026_atcr_july_data.pdf": "DOT Air Travel Consumer Report",
+};
+
+
+// -------------------------------------------------------------------
+// Small DOM helpers
+// -------------------------------------------------------------------
+
+function element(tag, className, text) {
+    const node = document.createElement(tag);
+
+    if (className) {
+        node.className = className;
+    }
+
+    if (text !== undefined) {
+        node.textContent = text;
+    }
+
+    return node;
+}
+
+
+function scrollToBottom() {
+    thread.scrollTo({
+        top: thread.scrollHeight,
+        behavior: "smooth",
+    });
+}
 
 
 function isHttpUrl(value) {
@@ -97,109 +73,309 @@ function isHttpUrl(value) {
 }
 
 
-function renderSources(items) {
-    sourceList.replaceChildren();
-
-    if (!Array.isArray(items) || items.length === 0) {
-        sources.classList.add("hidden");
-        return;
-    }
-
-    for (const item of items) {
-        const row = document.createElement("li");
-        row.className = "source-item";
-
-        const [label, kind] = SOURCE_LABELS[item.source_type] ?? [
-            "Source",
-            "",
-        ];
-
-        const badge = document.createElement("span");
-        badge.className = `source-type ${kind}`.trim();
-        badge.textContent = label;
-        row.appendChild(badge);
-
-        if (item.url && isHttpUrl(item.url)) {
-            const link = document.createElement("a");
-            link.href = item.url;
-            link.target = "_blank";
-            link.rel = "noopener noreferrer";
-            link.textContent = item.title || item.url;
-            row.appendChild(link);
-        } else {
-            const title = document.createElement("span");
-            title.textContent = item.title;
-            row.appendChild(title);
-        }
-
-        if (item.page_number) {
-            const page = document.createElement("span");
-            page.className = "source-page";
-            page.textContent = `p. ${item.page_number}`;
-            row.appendChild(page);
-        }
-
-        sourceList.appendChild(row);
-    }
-
-    sources.classList.remove("hidden");
+function friendlyDocumentName(source) {
+    return DOCUMENT_NAMES[source] ??
+        source.replace(/\.[a-z0-9]+$/i, "").replace(/[_-]+/g, " ");
 }
 
 
-function displayResult(data) {
-    answer.innerHTML = renderMarkdown(
-        data.answer
+// -------------------------------------------------------------------
+// Markdown
+// -------------------------------------------------------------------
+
+function renderMarkdown(markdownText) {
+    const container = element("div", "answer");
+
+    if (!markdownText) {
+        container.textContent = "No answer was produced for this request.";
+        return container;
+    }
+
+    if (
+        typeof marked === "undefined" ||
+        typeof DOMPurify === "undefined"
+    ) {
+        container.textContent = markdownText;
+        return container;
+    }
+
+    const cleanedMarkdown = markdownText
+        .replace(/&#x20;/gi, " ")
+        .replace(/&nbsp;/gi, " ");
+
+    container.innerHTML = DOMPurify.sanitize(
+        marked.parse(cleanedMarkdown)
     );
 
-    // Early-exit routes finish before skill routing, so no skill is selected.
-    selectedSkill.textContent =
+    // Wide tables scroll inside their own frame.
+    for (const table of container.querySelectorAll("table")) {
+        const wrap = element("div", "table-wrap");
+        table.replaceWith(wrap);
+        wrap.appendChild(table);
+    }
+
+    // Links in answers open in a new tab.
+    for (const link of container.querySelectorAll("a")) {
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+    }
+
+    return container;
+}
+
+
+// -------------------------------------------------------------------
+// Sources
+// -------------------------------------------------------------------
+
+function groupSources(items) {
+    const groups = new Map();
+
+    for (const item of items) {
+        const isDocument = item.source_type === "private_document";
+
+        const key = isDocument
+            ? `doc:${item.title}`
+            : `${item.source_type}:${item.url ?? item.title}`;
+
+        if (!groups.has(key)) {
+            groups.set(key, {
+                ...item,
+                title: isDocument
+                    ? friendlyDocumentName(item.title)
+                    : item.title,
+                pages: [],
+            });
+        }
+
+        if (item.page_number) {
+            groups.get(key).pages.push(item.page_number);
+        }
+    }
+
+    for (const group of groups.values()) {
+        group.pages = [...new Set(group.pages)].sort((a, b) => a - b);
+    }
+
+    return [...groups.values()];
+}
+
+
+function renderSources(items) {
+    if (!Array.isArray(items) || items.length === 0) {
+        return null;
+    }
+
+    const list = element("div", "sources");
+
+    for (const source of groupSources(items)) {
+        const kind = SOURCE_KINDS[source.source_type] ?? {
+            label: "Source",
+            kind: "",
+        };
+
+        const hasLink = source.url && isHttpUrl(source.url);
+
+        const chip = element(hasLink ? "a" : "span", "source-chip");
+
+        if (hasLink) {
+            chip.href = source.url;
+            chip.target = "_blank";
+            chip.rel = "noopener noreferrer";
+            chip.title = source.url;
+        }
+
+        chip.appendChild(
+            element("span", `source-badge ${kind.kind}`.trim(), kind.label)
+        );
+        chip.appendChild(
+            element("span", "source-title", source.title || source.url)
+        );
+
+        if (source.pages.length > 0) {
+            const label = source.pages.length === 1 ? "p." : "pp.";
+
+            chip.appendChild(
+                element(
+                    "span",
+                    "source-pages",
+                    `${label} ${source.pages.join(", ")}`
+                )
+            );
+        }
+
+        list.appendChild(chip);
+    }
+
+    return list;
+}
+
+
+// -------------------------------------------------------------------
+// Run details
+// -------------------------------------------------------------------
+
+function plural(count, singular, pluralForm = `${singular}s`) {
+    return `${count} ${count === 1 ? singular : pluralForm}`;
+}
+
+
+function renderRunDetails(data, elapsedSeconds) {
+    const details = element("details", "run-details");
+    const summary = element("summary");
+
+    const route =
         data.selected_skill ??
         ROUTE_LABELS[data.stop_reason] ??
         "—";
 
-    stopReason.textContent =
-        data.stop_reason ?? "—";
+    summary.appendChild(element("span", "route-pill", route));
 
-    stepCount.textContent =
-        data.step_count ?? 0;
+    const parts = [];
 
-    toolCallCount.textContent =
-        data.tool_call_count ?? 0;
+    if (data.knowledge_search_count) {
+        parts.push(plural(data.knowledge_search_count, "doc search"));
+    }
 
-    knowledgeSearchCount.textContent =
-        data.knowledge_search_count ?? 0;
+    if (data.data_analysis_count) {
+        parts.push(
+            plural(data.data_analysis_count, "data analysis", "data analyses")
+        );
+    }
 
-    dataAnalysisCount.textContent =
-        data.data_analysis_count ?? 0;
+    if (data.web_search_count) {
+        parts.push(plural(data.web_search_count, "web search"));
+    }
 
-    webSearchCount.textContent =
-        data.web_search_count ?? 0;
+    parts.push(`${elapsedSeconds.toFixed(1)}s`);
 
-    errorCount.textContent =
-        data.error_count ?? 0;
+    summary.appendChild(element("span", "", parts.join(" · ")));
+    details.appendChild(summary);
 
-    renderSources(data.sources);
+    const grid = element("div", "run-grid");
 
-    runId.textContent =
-        data.run_id ?? "—";
+    const metrics = [
+        ["Skill", route],
+        ["Stop reason", data.stop_reason ?? "—"],
+        ["Steps", data.step_count ?? 0],
+        ["Tool calls", data.tool_call_count ?? 0],
+        ["Doc searches", data.knowledge_search_count ?? 0],
+        ["Data analyses", data.data_analysis_count ?? 0],
+        ["Web searches", data.web_search_count ?? 0],
+        ["Errors", data.error_count ?? 0],
+    ];
 
-    result.classList.remove("hidden");
+    for (const [label, value] of metrics) {
+        const metric = element("div", "run-metric");
+        metric.appendChild(element("span", "", label));
+        metric.appendChild(element("strong", "", String(value)));
+        grid.appendChild(metric);
+    }
+
+    details.appendChild(grid);
+
+    if (data.run_id) {
+        details.appendChild(element("div", "run-id", `Run ID ${data.run_id}`));
+    }
+
+    return details;
 }
 
 
-form.addEventListener("submit", async (event) => {
-    event.preventDefault();
+// -------------------------------------------------------------------
+// Messages
+// -------------------------------------------------------------------
 
-    const question = questionInput.value.trim();
+function startConversation() {
+    emptyState.classList.add("hidden");
+    newChatButton.classList.remove("hidden");
+}
 
-    if (!question) {
-        showError("Please enter a question.");
-        return;
+
+function addUserMessage(text) {
+    const message = element("div", "message message-user");
+    message.appendChild(element("div", "bubble", text));
+    messages.appendChild(message);
+}
+
+
+function addAssistantMessage() {
+    const message = element("div", "message message-assistant");
+    message.appendChild(element("div", "avatar", "AI"));
+
+    const body = element("div", "assistant-body");
+
+    const typing = element("div", "typing");
+    const dots = element("span", "dots");
+    dots.append(element("span"), element("span"), element("span"));
+    typing.append(dots, element("span", "", "Analyzing…"));
+
+    body.appendChild(typing);
+    message.appendChild(body);
+    messages.appendChild(message);
+
+    return body;
+}
+
+
+function fillAssistantMessage(body, data, elapsedSeconds) {
+    body.replaceChildren(renderMarkdown(data.answer));
+
+    const sources = renderSources(data.sources);
+
+    if (sources) {
+        body.appendChild(sources);
     }
 
-    clearError();
-    result.classList.add("hidden");
-    setLoading(true);
+    body.appendChild(renderRunDetails(data, elapsedSeconds));
+}
+
+
+function showAssistantError(body, message) {
+    body.replaceChildren(element("div", "message-error", message));
+}
+
+
+// -------------------------------------------------------------------
+// Request
+// -------------------------------------------------------------------
+
+async function readErrorMessage(response) {
+    let message = "The request could not be completed.";
+
+    try {
+        const errorData = await response.json();
+
+        if (errorData.detail) {
+            message =
+                typeof errorData.detail === "string"
+                    ? errorData.detail
+                    : JSON.stringify(errorData.detail);
+        }
+    } catch {
+        // Keep the default message.
+    }
+
+    return message;
+}
+
+
+function setBusy(isBusy) {
+    submitButton.disabled = isBusy;
+    questionInput.disabled = isBusy;
+}
+
+
+async function ask(question) {
+    startConversation();
+    addUserMessage(question);
+
+    const body = addAssistantMessage();
+    scrollToBottom();
+
+    setBusy(true);
+
+    const startedAt = performance.now();
 
     try {
         const response = await fetch("/ask", {
@@ -213,39 +389,126 @@ form.addEventListener("submit", async (event) => {
         });
 
         if (!response.ok) {
-            let message =
-                "The request could not be completed.";
-
-            try {
-                const errorData =
-                    await response.json();
-
-                if (errorData.detail) {
-                    message =
-                        typeof errorData.detail === "string"
-                            ? errorData.detail
-                            : JSON.stringify(
-                                errorData.detail
-                            );
-                }
-            } catch {
-                // Keep the default message.
-            }
-
-            throw new Error(message);
+            throw new Error(await readErrorMessage(response));
         }
 
         const data = await response.json();
 
-        displayResult(data);
+        fillAssistantMessage(
+            body,
+            data,
+            (performance.now() - startedAt) / 1000
+        );
 
     } catch (error) {
-        showError(
+        showAssistantError(
+            body,
             error.message ||
             "Something went wrong while contacting the agent."
         );
 
     } finally {
-        setLoading(false);
+        setBusy(false);
+        questionInput.focus();
+        scrollToBottom();
+    }
+}
+
+
+// -------------------------------------------------------------------
+// Composer
+// -------------------------------------------------------------------
+
+function resizeInput() {
+    questionInput.style.height = "auto";
+    questionInput.style.height = `${questionInput.scrollHeight}px`;
+}
+
+
+function submitQuestion() {
+    const question = questionInput.value.trim();
+
+    if (!question || submitButton.disabled) {
+        return;
+    }
+
+    questionInput.value = "";
+    resizeInput();
+
+    ask(question);
+}
+
+
+form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    submitQuestion();
+});
+
+
+questionInput.addEventListener("input", resizeInput);
+
+
+// Enter sends; Shift+Enter inserts a new line.
+questionInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
+        event.preventDefault();
+        submitQuestion();
     }
 });
+
+
+for (const suggestion of document.querySelectorAll(".suggestion")) {
+    suggestion.addEventListener("click", () => {
+        const kind = suggestion.querySelector(".suggestion-kind");
+
+        const question = suggestion.textContent
+            .replace(kind ? kind.textContent : "", "")
+            .trim();
+
+        ask(question);
+    });
+}
+
+
+newChatButton.addEventListener("click", () => {
+    messages.replaceChildren();
+    emptyState.classList.remove("hidden");
+    newChatButton.classList.add("hidden");
+    questionInput.focus();
+});
+
+
+// -------------------------------------------------------------------
+// Theme
+// -------------------------------------------------------------------
+
+function currentTheme() {
+    const explicit = document.documentElement.dataset.theme;
+
+    if (explicit) {
+        return explicit;
+    }
+
+    return window.matchMedia("(prefers-color-scheme: dark)").matches
+        ? "dark"
+        : "light";
+}
+
+
+themeToggle.addEventListener("click", () => {
+    const nextTheme = currentTheme() === "dark" ? "light" : "dark";
+
+    document.documentElement.dataset.theme = nextTheme;
+
+    try {
+        localStorage.setItem("theme", nextTheme);
+    } catch {
+        // Storage unavailable; the choice lasts for this page only.
+    }
+});
+
+
+// Firefox restores form-control state (including `disabled`) on reload,
+// so a reload mid-request would otherwise leave the composer locked.
+setBusy(false);
+questionInput.focus();

@@ -30,6 +30,27 @@ FRONTEND_DIR = (
     / "frontend"
 )
 
+@app.middleware("http")
+async def revalidate_frontend(request, call_next):
+    """
+    Make browsers revalidate the frontend on every load.
+
+    Without Cache-Control, browsers may heuristically reuse an old
+    index.html alongside a newer stylesheet. ETags keep revalidation
+    cheap (304 Not Modified when nothing changed).
+    """
+
+    response = await call_next(request)
+
+    if (
+        request.url.path == "/"
+        or request.url.path.startswith("/static/")
+    ):
+        response.headers["Cache-Control"] = "no-cache"
+
+    return response
+
+
 app.mount(
     "/static",
     StaticFiles(

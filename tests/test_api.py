@@ -105,3 +105,9 @@ def test_ask_endpoint_with_mocked_agent():
         question=question,
         verbose=False,
     )
+
+def test_frontend_assets_require_revalidation():
+    for path in ("/", "/static/styles.css", "/static/app.js"):
+        response = client.get(path)
+
+        assert response.headers["cache-control"] == "no-cache"
