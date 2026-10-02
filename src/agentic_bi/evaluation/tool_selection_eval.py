@@ -1,14 +1,7 @@
-import json
-
-from agentic_bi.config import EVALS_DIR
 from agentic_bi.core.agent import run_agent
+from agentic_bi.evaluation.common import load_cases
 
-EVAL_FILE = EVALS_DIR / "agent_cases.json"
-
-
-def load_cases() -> list[dict]:
-    with open(EVAL_FILE, encoding="utf-8") as file:
-        return json.load(file)
+CASES_FILE = "agent_cases.json"
 
 
 def get_actual_tools(tool_history: list[dict]) -> list[str]:
@@ -26,7 +19,7 @@ def get_actual_tools(tool_history: list[dict]) -> list[str]:
 
 def main() -> None:
 
-    cases = load_cases()
+    cases = load_cases(CASES_FILE)
 
     passed = 0
     evaluated = 0

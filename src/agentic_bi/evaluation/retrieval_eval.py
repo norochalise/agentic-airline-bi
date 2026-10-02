@@ -1,45 +1,20 @@
-import json
-from pathlib import Path
-from typing import Any
-
-from agentic_bi.config import EVALS_DIR
+from agentic_bi.evaluation.common import (
+    first_relevant_rank,
+    load_cases,
+    load_qrels,
+    reciprocal_rank,
+)
 from agentic_bi.tools.knowledge_search import search_private_knowledge
 
-CASES_FILE = EVALS_DIR / "retrieval_cases.json"
-QRELS_FILE = EVALS_DIR / "retrieval_qrels.json"
+CASES_FILE = "retrieval_cases.json"
 
 TOP_K = 5
 
 
-def load_json(path: Path) -> Any:
-    with path.open("r", encoding="utf-8") as file:
-        return json.load(file)
-
-
-def first_relevant_rank(
-    results: list[dict[str, Any]], relevant_chunk_ids: set[str]
-) -> int | None:
-
-    for rank, result in enumerate(results, start=1):
-        if result["chunk_id"] in relevant_chunk_ids:
-            return rank
-
-    return None
-
-
-def reciprocal_rank(rank: int | None) -> float:
-    if rank is None:
-        return 0.0
-
-    return 1.0 / rank
-
-
 def run_evaluation() -> None:
 
-    dataset = load_json(CASES_FILE)
-    qrels = load_json(QRELS_FILE)
-
-    cases = dataset["cases"]
+    cases = load_cases(CASES_FILE)
+    qrels = load_qrels()
 
     hit_1 = 0
     hit_3 = 0
@@ -60,7 +35,7 @@ def run_evaluation() -> None:
         case_id = case["id"]
         question = case["question"]
 
-        relevant_chunk_ids = set(qrels[case_id])
+        relevant_chunk_ids = qrels[case_id]
 
         response = search_private_knowledge(query=question, top_k=TOP_K)
 

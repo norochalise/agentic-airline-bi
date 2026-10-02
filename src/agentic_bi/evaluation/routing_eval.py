@@ -1,18 +1,7 @@
-import json
-
-from agentic_bi.config import EVALS_DIR
+from agentic_bi.evaluation.common import load_cases
 from agentic_bi.skills.router import select_skill
 
-EVAL_FILE = EVALS_DIR / "agent_cases.json"
-
-
-def load_cases() -> list[dict]:
-    """
-    Load evaluation cases from JSON.
-    """
-
-    with open(EVAL_FILE, encoding="utf-8") as file:
-        return json.load(file)
+CASES_FILE = "agent_cases.json"
 
 
 def run_routing_evaluation() -> None:
@@ -21,7 +10,7 @@ def run_routing_evaluation() -> None:
     the expected skill for each case.
     """
 
-    cases = load_cases()
+    cases = load_cases(CASES_FILE)
 
     total = 0
     passed = 0

@@ -1,18 +1,7 @@
-import json
-
-from agentic_bi.config import EVALS_DIR
 from agentic_bi.core.interaction import classify_interaction
+from agentic_bi.evaluation.common import load_cases
 
-EVAL_FILE = EVALS_DIR / "interaction_cases.json"
-
-
-def load_cases() -> list[dict]:
-    """
-    Load interaction-routing cases from JSON.
-    """
-
-    with open(EVAL_FILE, encoding="utf-8") as file:
-        return json.load(file)
+CASES_FILE = "interaction_cases.json"
 
 
 def run_interaction_routing_evaluation() -> None:
@@ -21,7 +10,7 @@ def run_interaction_routing_evaluation() -> None:
     expected intent, including the web-search conditions.
     """
 
-    cases = load_cases()
+    cases = load_cases(CASES_FILE)
 
     total = 0
     passed = 0

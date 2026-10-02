@@ -1,15 +1,9 @@
-import json
 from typing import Any
 
-from agentic_bi.config import EVALS_DIR
+from agentic_bi.evaluation.common import load_cases
 from agentic_bi.tools.knowledge_search import _load_retrieval_assets
 
-EVAL_FILE = EVALS_DIR / "retrieval_cases.json"
-
-
-def load_cases() -> list[dict[str, Any]]:
-    with EVAL_FILE.open("r", encoding="utf-8") as file:
-        return json.load(file)["cases"]
+CASES_FILE = "retrieval_cases.json"
 
 
 def normalize_source(source: str) -> str:
@@ -32,7 +26,7 @@ def is_candidate_chunk(chunk: dict[str, Any], case: dict[str, Any]) -> bool:
 
 
 def main() -> None:
-    cases = load_cases()
+    cases = load_cases(CASES_FILE)
 
     chunks, _, _ = _load_retrieval_assets()
 

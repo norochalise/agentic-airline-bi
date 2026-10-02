@@ -1,136 +1,44 @@
-import json
-
-from agentic_bi.config import EVALS_DIR
+from agentic_bi.config import RETRIEVAL_CANDIDATE_K, RETRIEVAL_TOP_K
+from agentic_bi.evaluation.common import (
+    first_relevant_rank,
+    hit_at_k,
+    load_cases,
+    load_qrels,
+    reciprocal_rank,
+)
 from agentic_bi.tools.improved_knowledge_search import search_private_knowledge_improved
 from agentic_bi.tools.knowledge_search import search_private_knowledge
 
-CASES_PATH = EVALS_DIR / "retrieval_cases.json"
+CASES_FILE = "retrieval_cases.json"
 
 
 # ============================================================
 # FROZEN STRICT RELEVANCE LABELS
 # ============================================================
 #
-# These are manually verified answer-bearing chunks.
-#
-# IMPORTANT:
-# Do not change these labels simply because a retrieval method
-# succeeds or fails.
+# Labels come from evals/retrieval_qrels.json: manually verified
+# answer-bearing chunks. Do not change them because a retrieval
+# method succeeds or fails.
 #
 # For normal cases, one complete answer-bearing chunk is enough.
 #
-# retrieval_002 is different:
-# its complete evidence is split across two adjacent chunks.
-# Therefore it is handled separately below as fragmented evidence.
+# Fragmented cases are different: their complete evidence is split
+# across chunks (retrieval_002: c0 has the general $4,700 baggage
+# liability cap, c1 the wheelchair / assistive-device exception).
+# Neither chunk alone is a strict ranked hit, but the expanded context
+# has enough evidence when it contains ALL of them.
 # ============================================================
+
+FRAGMENTED_CASES = {"retrieval_002"}
+
+QRELS = load_qrels()
 
 RELEVANT_CHUNKS = {
-    "retrieval_001": {"delta_domestic_contract_plain_language_2026-08-18:p21:c1"},
-    # Fragmented evidence.
-    # No single chunk contains the complete verified answer.
-    "retrieval_002": set(),
-    "retrieval_003": {"delta_domestic_contract_plain_language_2026-08-18:p8:c2"},
-    "retrieval_004": {"delta_domestic_contract_plain_language_2026-08-18:p19:c2"},
-    "retrieval_005": {"delta_customer_service_plan_2026-09-25:c2"},
-    "retrieval_006": {"delta_customer_service_plan_2026-09-25:c17"},
-    "retrieval_007": {"delta_customer_service_plan_2026-09-25:c12"},
-    "retrieval_008": {"delta_2025_form_10k:p5:c2"},
-    "retrieval_009": {"delta_2025_form_10k:p20:c4"},
-    "retrieval_010": {
-        "dot_september_2026_atcr_july_data:p6:c0",
-        "dot_september_2026_atcr_july_data:p8:c0",
-    },
+    case_id: set() if case_id in FRAGMENTED_CASES else chunk_ids
+    for case_id, chunk_ids in QRELS.items()
 }
 
-
-# ============================================================
-# FRAGMENTED EVIDENCE
-# ============================================================
-#
-# Some questions require multiple chunks together.
-#
-# retrieval_002 requires:
-#
-# c0 -> general $4,700 baggage liability cap
-# c1 -> wheelchair / assistive-device exception
-#
-# Neither chunk alone should count as a complete strict
-# answer-bearing retrieval hit.
-#
-# However, if BOTH appear in the final expanded context,
-# the system has enough evidence to answer the question.
-# ============================================================
-
-FRAGMENTED_EVIDENCE_GROUPS = {
-    "retrieval_002": {
-        "delta_domestic_contract_plain_language_2026-08-18:p14:c0",
-        "delta_domestic_contract_plain_language_2026-08-18:p14:c1",
-    }
-}
-
-
-def load_cases() -> list[dict]:
-    """
-    Load the frozen M14 retrieval evaluation dataset.
-    """
-
-    with CASES_PATH.open("r", encoding="utf-8") as file:
-        data = json.load(file)
-
-    return data["cases"]
-
-
-def first_relevant_rank(results: list[dict], relevant_chunks: set[str]) -> int | None:
-    """
-    Return the rank of the first complete answer-bearing chunk.
-
-    If the case has no single complete relevant chunk,
-    or no relevant chunk appears in the results,
-    return None.
-    """
-
-    if not relevant_chunks:
-        return None
-
-    for rank, result in enumerate(results, start=1):
-        if result["chunk_id"] in relevant_chunks:
-            return rank
-
-    return None
-
-
-def hit_at_k(rank: int | None, k: int) -> int:
-    """
-    Return 1 if relevant evidence appears within rank K.
-    Otherwise return 0.
-    """
-
-    if rank is None:
-        return 0
-
-    return int(rank <= k)
-
-
-def reciprocal_rank(rank: int | None, max_rank: int = 5) -> float:
-    """
-    Calculate reciprocal rank.
-
-    Examples:
-
-    rank 1 -> 1.0
-    rank 2 -> 0.5
-    rank 3 -> 0.333...
-    rank > max_rank -> 0
-    not found -> 0
-    """
-
-    if rank is None:
-        return 0.0
-
-    if rank > max_rank:
-        return 0.0
-
-    return 1.0 / rank
+FRAGMENTED_EVIDENCE_GROUPS = {case_id: QRELS[case_id] for case_id in FRAGMENTED_CASES}
 
 
 def context_contains_evidence(
@@ -205,7 +113,7 @@ def main() -> None:
     are deliberately kept separate.
     """
 
-    cases = load_cases()
+    cases = load_cases(CASES_FILE)
 
     # --------------------------------------------------------
     # Baseline metrics
@@ -272,7 +180,7 @@ def main() -> None:
         baseline = search_private_knowledge(query=question, top_k=5)
 
         baseline_rank = first_relevant_rank(
-            results=baseline["results"], relevant_chunks=relevant_chunks
+            results=baseline["results"], relevant_chunk_ids=relevant_chunks
         )
 
         baseline_hit_1 += hit_at_k(baseline_rank, 1)
@@ -288,11 +196,11 @@ def main() -> None:
         # ====================================================
 
         improved = search_private_knowledge_improved(
-            query=question, candidate_k=15, top_k=5
+            query=question, candidate_k=RETRIEVAL_CANDIDATE_K, top_k=RETRIEVAL_TOP_K
         )
 
         reranked_rank = first_relevant_rank(
-            results=improved["reranked_results"], relevant_chunks=relevant_chunks
+            results=improved["reranked_results"], relevant_chunk_ids=relevant_chunks
         )
 
         reranked_hit_1 += hit_at_k(reranked_rank, 1)

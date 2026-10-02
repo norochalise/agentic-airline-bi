@@ -1,24 +1,14 @@
-import json
 from typing import Any
 
-from agentic_bi.config import EVALS_DIR
 from agentic_bi.core.agent import run_agent
+from agentic_bi.evaluation.common import load_cases
 from agentic_bi.evaluation.failure_analysis import (
     FailureRecord,
     classify_failures,
     summarize_failure_categories,
 )
 
-CASES_PATH = EVALS_DIR / "agent_end_to_end_cases.json"
-
-
-def load_cases() -> list[dict[str, Any]]:
-    """Load the frozen M15 end-to-end evaluation cases."""
-
-    with CASES_PATH.open("r", encoding="utf-8") as file:
-        data = json.load(file)
-
-    return data["cases"]
+CASES_FILE = "agent_end_to_end_cases.json"
 
 
 def get_used_tools(observations: list[dict[str, Any]]) -> list[str]:
@@ -87,7 +77,7 @@ def print_failure_record(failure: FailureRecord) -> None:
 
 
 def main() -> None:
-    cases = load_cases()
+    cases = load_cases(CASES_FILE)
 
     total = len(cases)
 
