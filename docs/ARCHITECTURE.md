@@ -1,5 +1,19 @@
 # Architecture
 
+> **October 2026 update.** The sections below describe the design as first built. The October 2026 refactor kept the behaviour (same evals, and byte-identical tool schemas and prompts) but changed the structure:
+>
+> - **Routing:** an LLM interaction router runs first and maps the intent to a skill. The keyword router (§9) is now only a fallback. Greetings, app questions, out-of-scope requests and current-information questions are answered before the tool loop.
+> - **Tool registry (§10):** one `ToolSpec` per tool replaces the separate `TOOLS`, `FUNCTIONS`, schema, policy and access tables. The OpenAI tool JSON and the prompt's capability list are generated from it, and `action_guard` reads it.
+> - **Agent controller (§7):** `run_agent` is a pipeline: `interaction_gate` → `choose_skill` → `run_tool_loop` → `finish_run`. Each call goes through `handle_tool_call` (guards) and `execute_tool` (access policy → retry → output validation). The client, run store and tools are injected.
+> - **Data path (§11–12):** the flight tool runs in-process by default (about 0.02 s instead of about 2.3 s). MCP is opt-in with `TOOL_TRANSPORT=mcp`.
+> - **Web path:** a third tool, `search_official_web`, is offered only to knowledge-analysis, once, after a private search.
+> - **Knowledge results (§14):** each result carries `retrieval_type` and `rerank_score`; neighbour chunks have `score=None`.
+> - **Configuration:** `config.py` holds every path, setting and constant.
+> - **Persistence (§19):** run storage goes through `core/run_store.py` (keeps the newest `MAX_SAVED_RUNS`).
+> - **API (§6):** `/ask` returns `{detail, error_id}` on failure, caps questions at 2,000 characters, and the server loads models at startup.
+>
+> See [`REFACTOR_JOURNEY.md`](REFACTOR_JOURNEY.md) for the step-by-step changes.
+
 ## 1. Overview
 
 Agentic Business Intelligence is designed around one principle:
@@ -78,7 +92,7 @@ flowchart TB
 
     EVAL["Evaluation<br/>Routing • Tools • Arguments<br/>Retrieval • E2E • Failures"] -.-> AGENT
 
-    TEST["pytest<br/>24 Passing Tests"] -.-> API
+    TEST["pytest<br/>141 Passing Tests"] -.-> API
     TEST -.-> REL
     TEST -.-> TRACE
 ```
@@ -930,10 +944,10 @@ The resulting fix changed the production retrieval architecture.
 
 pytest covers deterministic software contracts.
 
-Current regression status:
+Current regression status (October 2026):
 
 ```text
-24 passed
+141 passed
 ```
 
 Coverage includes areas such as:

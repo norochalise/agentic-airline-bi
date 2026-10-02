@@ -10,3 +10,7 @@ data/checkpoints/
 .pytest_cache/
 # Local planning notes
 REFACTOR_PLAN.md
+
+# Coverage data
+.coverage
+htmlcov/

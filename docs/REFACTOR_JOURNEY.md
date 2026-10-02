@@ -25,7 +25,7 @@ A short log of how the Airline Intelligence Assistant went from "broken after a 
 | `PROJECT_ROOT` definitions | 15, some wrong | 1 (`config.py`) |
 | Data-tool call | ~2.3 s (new subprocess) | **0.02 s** (in-process) |
 | Routing eval | 15/15 | 15/15 |
-| Retrieval Hit@3 / MRR (baseline → reranked) | 80% / 0.650 → 90% / 0.750 | unchanged |
+| Retrieval Hit@3 / MRR (FAISS → reranked, strict labels) | 70% / 0.600 → 90% / 0.750 | unchanged |
 
 ---
 
@@ -46,7 +46,7 @@ A short log of how the Airline Intelligence Assistant went from "broken after a 
 | Tool selection | 15/15 |
 | Arguments | 7/7 |
 | End-to-end | 8/8 |
-| Retrieval Hit@3 (baseline → reranked) | 80% → 90% |
+| Retrieval Hit@3 (FAISS → reranked) | 70% → 90% |
 
 **Lesson:** before refactoring anything, make it work, put it in version control, and write the numbers down. Every later step is judged against them.
 
