@@ -1,965 +1,227 @@
 # Evaluation
 
-## 1. Why Evaluation Is a First-Class Component
+How the assistant is measured, what the numbers are, and what they do and don't show.
 
-A successful demo answers:
-
-> **Can the system work on this example?**
-
-Evaluation asks a harder question:
-
-> **Does the expected behavior hold across a fixed set of cases, and where does it fail?**
-
-Agentic systems can fail at several independent stages:
-
-```text
-routing
-tool selection
-argument generation
-tool execution
-retrieval
-context construction
-termination
-final answer generation
-```
-
-A plausible final answer can hide problems in any of those stages.
-
-For that reason, Agentic Business Intelligence evaluates components separately and then evaluates the complete system end to end.
-
-> **Scope:** all percentages in this document apply only to the stated frozen development/evaluation sets. They are not estimates of universal production accuracy.
+> All AI and retrieval results below come from **small, frozen development sets**. They show that the system behaves as designed on known cases. They are **not** estimates of production accuracy.
 
 ---
 
-# 2. Evaluation Architecture
+## 1. Principles
 
-```mermaid
-flowchart TB
-    Q["Frozen Agent Cases"]
-
-    Q --> R["Routing Evaluation"]
-    Q --> T["Tool Selection Evaluation"]
-    Q --> A["Argument Evaluation"]
-    Q --> E["End-to-End Evaluation"]
-
-    K["Frozen Retrieval Cases<br/>+ Source-Verified Evidence"]
-    --> B["Baseline Retrieval"]
-
-    K --> I["Improved Retrieval"]
-
-    B --> M["Hit@K / MRR"]
-    I --> M
-
-    I --> C["Expanded Context<br/>Evidence Coverage"]
-
-    E --> F["Failure Classification"]
-    F --> D["Failure Analysis"]
-    D --> FIX["Engineering Change"]
-    FIX --> REG["Regression Evaluation"]
-
-    P["pytest<br/>Deterministic Contracts"]
-    -. separate .-> Q
-```
-
-The evaluation system therefore contains two broad categories:
-
-```text
-AI / retrieval evaluation
-→ Does system behavior match expectations?
-
-Software regression testing
-→ Did deterministic software contracts break?
-```
-
-They are complementary, not interchangeable.
+1. **Freeze before optimising.** Cases and labels are fixed before a method is tuned. A label is never changed because a method passed or failed.
+2. **Measure each layer separately.** Routing, tool choice, arguments, retrieval and the final answer fail in different ways. Separate measurements show *where* a failure is.
+3. **Evaluate the trajectory, not just the text.** A fluent answer can come from the wrong tool or weak evidence.
+4. **Keep ranked retrieval apart from context construction.** Neighbour chunks help the answer but never get fake ranks.
+5. **Check against an outside source when one exists.** Computed metrics are compared with published figures (see §6).
+6. **Record failures.** Failures are classified and kept; the most useful lessons came from them (§8).
+7. **Test software deterministically.** `pytest` checks code contracts with fake model clients; the evals check model behaviour. They answer different questions.
 
 ---
 
-# 3. Evaluation Summary
+## 2. The evaluation suites
 
-## Agent behavior
+| Suite | Command | Cases | Measures | Cost |
+|---|---|---:|---|---|
+| Skill routing | `uv run abi-eval-routing` | 15 | Keyword router → expected skill | free |
+| Interaction routing | `uv run abi-eval-interaction` | 15 | LLM intent classifier, including web conditions | paid |
+| Tool selection | `uv run abi-eval-tools` | 15 | Agent calls the expected tool(s) | paid |
+| Arguments | `uv run abi-eval-arguments` | 7 | Structured arguments (`min_flights`, `top_n`) | paid |
+| End-to-end | `uv run abi-eval-e2e` | 8 | Skill, tool, arguments, stop reason, errors, required answer facts | paid |
+| Flight analytics | `uv run abi-eval-analytics` | 8 | Skill, tool and key arguments for the analytics tools | paid |
+| Retrieval (FAISS) | `uv run abi-eval-retrieval` | 10 | Hit@K and MRR against verified chunk labels | free |
+| Retrieval (reranked) | `uv run abi-eval-reranked` | 10 | FAISS vs reranked on strict labels, plus context coverage | free |
+| Software | `uv run pytest` | 173 tests | Deterministic contracts, fake clients | free |
 
-| Evaluation | Frozen cases | Result |
-|---|---:|---:|
-| Skill routing | 15 | **15/15** |
-| Tool selection | 15 | **15/15** |
-| Structured argument extraction | 7 | **7/7** |
-| End-to-end agent cases | 8 | **8/8** |
-| Classified failures after final fixes | 8 E2E cases | **0** |
+The case files live in `evals/`:
+- `agent_cases.json`
+- `interaction_cases.json`
+- `agent_end_to_end_cases.json`
+- `analytics_cases.json`
+- `retrieval_cases.json` and `retrieval_qrels.json`
 
-## Retrieval
-
-| Metric | Baseline | Reranked |
-|---|---:|---:|
-| Hit@1 | 5/10 = **50%** | 6/10 = **60%** |
-| Hit@3 | 7/10 = **70%** | 9/10 = **90%** |
-| Hit@5 | 7/10 = **70%** | 9/10 = **90%** |
-| MRR@5 | **0.600** | **0.750** |
-| Expanded-context evidence coverage | — | **10/10 (100%)** |
-
-## Deterministic software regression
-
-```text
-24 passed
-```
-
-These numbers measure different properties and should not be combined into a single "accuracy" score.
+**"Paid"** means the eval calls the OpenAI API: a few cents per run, and about $1–2 for all of them together.
 
 ---
 
-# 4. M13 — Agent Behavior Evaluation
-
-A frozen development set was created to evaluate behavior across:
-
-- structured-data questions;
-- private-knowledge questions;
-- boundary/ambiguous questions.
-
-Three stages were measured separately.
+## 3. Current results
 
 | Evaluation | Result |
 |---|---:|
-| Skill routing | **15/15 (100%)** |
-| Tool selection | **15/15 (100%)** |
-| Structured argument extraction | **7/7 (100%)** |
+| Skill routing | **15/15** |
+| Interaction routing | **15/15** |
+| Tool selection | **15/15** |
+| Arguments | **7/7** |
+| End-to-end | **8/8**, 0 classified failures |
+| Flight analytics | **8/8** |
+| pytest | **173 passed** |
 
-These results describe the current frozen M13 set only.
+Retrieval, with strict answer-bearing labels on the same 10 cases:
 
----
+| Metric | FAISS baseline | + cross-encoder rerank |
+|---|---:|---:|
+| Hit@1 | 50% | **60%** |
+| Hit@3 | 70% | **90%** |
+| Hit@5 | 70% | **90%** |
+| MRR@5 | 0.600 | **0.750** |
+| Expanded-context evidence coverage | — | **10/10** |
 
-# 5. Why Routing, Tools, and Arguments Are Separate
+`abi-eval-retrieval` reports a FAISS baseline of Hit@3 80% and MRR 0.650. The difference is one case:
+- `abi-eval-retrieval` counts `retrieval_002`, whose answer is split across two chunks, as a hit when *either* chunk is retrieved.
+- The reranked comparison treats it strictly: it has no single answer-bearing chunk, so it only counts toward context coverage, and only when *both* chunks are present.
 
-Consider this trajectory:
-
-```text
-Question
-   ↓
-Correct skill?
-   ↓
-Correct tool?
-   ↓
-Correct arguments?
-   ↓
-Tool execution
-```
-
-A correct route does not guarantee the correct tool.
-
-A correct tool does not guarantee valid arguments.
-
-And all three can be correct while the final answer still fails later.
-
-Separating these dimensions makes failures easier to localize.
+Both numbers are reported, and each eval states its rule.
 
 ---
 
-# 6. Router Improvement Example
+## 4. Agent behaviour: routing, tools, arguments
 
-One frozen case concerned Delta customer commitments during disruption.
+The 15 agent cases mix structured-data questions, document questions and boundary cases, such as a policy question that mentions cancellations.
 
-The deterministic router initially selected the wrong path.
-
-Rather than broadly rewriting the router, the failure led to a narrow change:
+**Why three separate measurements:**
 
 ```text
-add:
-commitment
-→ knowledge-oriented term
-
-remove:
-flight
-→ overly generic data keyword
-
-retain:
-flight data
-→ stronger structured-data phrase
+correct skill? → correct tool? → correct arguments? → execution → answer
 ```
 
-After the targeted adjustment:
+A correct route doesn't guarantee the right tool, and the right tool doesn't guarantee valid arguments. Measuring each stage tells you which one broke.
 
-```text
-Routing regression
-15/15
-```
+**A targeted fix, not a rewrite.** One case, about Delta's customer commitments during disruption, was first routed to data analysis. The fix was narrow:
+- add "commitment" as a knowledge term;
+- drop the overly generic keyword "flight", while keeping the stronger phrase "flight data".
 
-The important point is not the perfect score on a small set.
-
-The important point is the workflow:
-
-```text
-freeze cases
-   ↓
-measure
-   ↓
-observe failure
-   ↓
-make targeted change
-   ↓
-rerun same cases
-```
+The same 15 cases were then re-run: 15/15. Later the matching moved to whole words. Before that, "rate" matched "corporate" and "rag" matched "average". The routing score was unchanged, and the false matches are now covered by tests.
 
 ---
 
-# 7. M14 — Retrieval Evaluation
+## 5. Retrieval
 
-Retrieval was evaluated independently from answer generation.
+**Labels.** `evals/retrieval_qrels.json` lists, for each case, the chunk IDs that actually contain the answer. They were verified by reading and visually inspecting the source pages, not by looking at retrieval output. Retrieving the right *document* is not enough; the eval asks whether the *answer-bearing chunk* was found.
 
-This was necessary because an LLM can sometimes produce a plausible response even when the retrieved evidence is weak.
+**Metrics:**
+- **Hit@K:** a verified answer-bearing chunk appears in the top K.
+- **MRR@5:** the mean of 1/rank of the first such chunk (0 if it isn't in the top 5).
+- **Context coverage:** the final expanded context (top 5 plus neighbours) contains enough evidence. For a fragmented case, that means *all* of its required chunks.
 
-The final frozen M14 development set contains:
+**What improved retrieval:**
+1. **Cross-encoder reranking** (`ms-marco-MiniLM-L6-v2`) over the 15 FAISS candidates moved answer-bearing chunks up: Hit@3 70% → 90%, MRR 0.600 → 0.750.
+2. **Neighbour expansion** (the previous and next chunk from the same document) recovered evidence split across chunk boundaries, bringing context coverage to 10/10.
 
-```text
-10 source-verified retrieval cases
-```
-
-The evaluation focuses on **answer-bearing evidence**, not merely retrieving the correct document.
-
----
-
-# 8. Baseline Retrieval
-
-The baseline pipeline was:
-
-```text
-Question
-   ↓
-MiniLM embedding
-   ↓
-FAISS
-   ↓
-Top-K chunks
-```
-
-Embedding model:
-
-```text
-sentence-transformers/all-MiniLM-L6-v2
-```
-
-Strict baseline results:
-
-| Metric | Result |
-|---|---:|
-| Hit@1 | **5/10 = 50%** |
-| Hit@3 | **7/10 = 70%** |
-| Hit@5 | **7/10 = 70%** |
-| MRR@5 | **0.600** |
-
-These results exposed an important distinction:
-
-> Retrieving the correct document or semantic neighborhood is not necessarily the same as retrieving the exact answer-bearing chunk.
+**What the results support:** on these cases, two-stage retrieval puts answer-bearing evidence in front of the model much more reliably than FAISS alone. They do not show general retrieval quality on unseen questions.
 
 ---
 
-# 9. Improved Retrieval
+## 6. Data analytics
 
-The improved pipeline became:
+**Analytics eval.** Eight cases cover the analytics tools:
+- the lowest on-time rate among routes from ATL (with a route-volume threshold)
+- the highest average arrival delay by destination
+- a direct JFK vs LGA comparison (`only=["JFK","LGA"]`)
+- the best operating carrier
+- weekdays in calendar order
+- overall delay causes and ORD-only delay causes
+- the highest diversion rate
 
-```text
-Question
-   ↓
-MiniLM embedding
-   ↓
-FAISS top 15 candidates
-   ↓
-CrossEncoder reranking
-   ↓
-Top 5 ranked evidence
-   ↓
-Neighbor expansion
-   ↓
-Final evidence context
-```
+The eval checks the skill, the tool and only the arguments the question pins down. Result: **8/8**.
 
-Reranker:
+**Regression.** Adding the new tools changed the data-analysis prompt, so the original suites were re-run. Tool selection stayed 15/15, arguments 7/7 and end-to-end 8/8, so the original cancellation questions still choose the original tool.
 
-```text
-cross-encoder/ms-marco-MiniLM-L6-v2
-```
+**Validation against the DOT report.** The DOT Air Travel Consumer Report is in the document set, and it publishes July 2026 on-time rates. The first implementation computed on-time rates over completed flights only; the DOT counts cancelled and diverted flights as *not on time*.
 
-Strict ranked results:
-
-| Metric | Baseline | Reranked | Change |
+| | Completed flights only | DOT definition | DOT report |
 |---|---:|---:|---:|
-| Hit@1 | 50% | **60%** | +10 percentage points |
-| Hit@3 | 70% | **90%** | +20 percentage points |
-| Hit@5 | 70% | **90%** | +20 percentage points |
-| MRR@5 | 0.600 | **0.750** | +0.150 |
+| Delta network | 74.52% | **71.67%** | **71.7%** |
+| DL mainline | 74.10% | **71.86%** | **71.9%** |
 
-On this frozen set, reranking improved the placement of answer-bearing evidence.
+The implementation now uses the DOT definition, and `tests/test_flight_metrics.py` pins both figures. Without the outside check, on-time performance would have been overstated by about 3 points.
 
----
-
-# 10. What Hit@K Means Here
-
-For a retrieval question, Hit@K asks:
-
-> Did at least one source-verified answer-bearing evidence chunk appear within the first K ranked results?
-
-For example:
-
-```text
-Hit@1
-→ evidence appears in the first ranked result
-
-Hit@3
-→ evidence appears somewhere in results 1–3
-
-Hit@5
-→ evidence appears somewhere in results 1–5
-```
-
-The project uses strict answer-bearing evidence rather than counting a merely related chunk as a hit.
+The new ranking tool also reproduces the original cancellation tool exactly (LGA 11.43%, JFK 10.78%, DCA 7.35% at ≥1,000 flights).
 
 ---
 
-# 11. MRR@5
+## 7. End-to-end evaluation
 
-Mean Reciprocal Rank rewards evidence appearing earlier in the ranked list.
+There are 8 frozen cases: 3 structured-data and 5 private-knowledge questions. A case passes only if all of these pass:
+- the skill
+- the tool
+- the arguments
+- the stop reason
+- no runtime errors
+- the required facts appearing in the answer
 
-For one query:
-
-```text
-rank 1 → reciprocal rank = 1.0
-rank 2 → reciprocal rank = 0.5
-rank 3 → reciprocal rank = 0.333...
-```
-
-If no relevant answer-bearing evidence appears in the first five results, that case contributes zero.
-
-The project improved from:
-
-```text
-0.600
-```
-
-to:
-
-```text
-0.750
-```
-
-on the frozen M14 set.
-
-This indicates that relevant evidence moved closer to the top of the ranked results on average.
+Failures are classified by `evaluation/failure_analysis.py` into routing, tool selection, arguments, tool execution, guard, termination or answer failures.
 
 ---
 
-# 12. Neighbor Context Expansion
+## 8. Case study: the fuel-expense failure
 
-Reranking improves ranking.
+The most useful result in the project was a **failure**:
 
-It does not solve every chunk-boundary problem.
+> *According to Delta's 2025 10-K, what percentage of operating expense was fuel in 2025, 2024 and 2023?*
 
-Some evidence can be split across adjacent chunks.
-
-The improved pipeline therefore performs neighbor expansion after ranking.
-
-Conceptually:
+The trajectory looked healthy (the right skill, the knowledge tool called and completed), but the answer failed.
 
 ```text
-Ranked Chunk
-     ↓
-Is nearby context useful?
-     ↓
-Include adjacent chunk(s)
-     ↓
-Build final evidence context
+end-to-end failure
+  → the tool call succeeded, so look deeper
+  → failure analysis: production registry still used the BASELINE retriever
+    (the improved retriever existed only in the experiment)
+  → integrate the improved retriever
+  → new failure: schema rejected the cross-encoder's unbounded logit as "score"
+  → keep the rerank score internal, expose the bounded FAISS score
+  → full regression: 8/8, 0 classified failures
 ```
 
-Final expanded-context evidence coverage:
+The recovered answer gave fuel as about 17.1%, 19.0% and 21.1% of operating expense for 2025, 2024 and 2023.
 
-```text
-10/10 = 100%
-```
+**Lessons:**
+- An experimental improvement has no value until the production path uses it.
+- A successful tool call does not mean a correct outcome.
+- Every fix needs a full regression run, because fixes expose new contract problems.
 
-One case in the frozen set was explicitly identified as fragmented evidence.
+Later, the refactor made the scores explicit: each result now carries `retrieval_type`, a FAISS `score` (`None` for neighbours) and a separate `rerank_score`.
 
 ---
 
-# 13. Critical Metric Distinction
+## 9. Baselines across the refactor
 
-Expanded-context evidence coverage is **not Hit@K**.
+The October 2026 refactor (see [`REFACTOR_JOURNEY.md`](REFACTOR_JOURNEY.md)) was judged against a baseline recorded before any change. A routing or retrieval regression blocked a step.
 
-The project keeps two concepts separate:
+| Evaluation | Before refactor | After Steps 1–5 | After Steps 6–7 |
+|---|---:|---:|---:|
+| pytest | 52 | 141 | 173 |
+| Skill routing | 15/15 | 15/15 | 15/15 |
+| Interaction routing | 15/15 | 15/15 | (router unchanged) |
+| Tool selection | 15/15 | 15/15 | 15/15 |
+| Arguments | 7/7 | 7/7 | 7/7 |
+| End-to-end | 8/8 | 8/8 | 8/8 |
+| Retrieval, reranked (Hit@3 / MRR) | 90% / 0.750 | 90% / 0.750 | 90% / 0.750 |
+| Flight analytics | — | — | 8/8 |
 
-```text
-reranked_results
-→ actual ranked retrieval candidates
-```
-
-and:
-
-```text
-context_results
-→ final evidence context after neighbor expansion
-```
-
-A neighboring chunk may help answer the question without having been independently retrieved at rank 1, 2, 3, etc.
-
-The project therefore does **not** assign artificial ranks to expanded neighbors.
-
-This prevents context construction from inflating ranked retrieval metrics.
+**How the paid runs were kept to one per step.** Whenever generated prompts or tool schemas changed, they were first compared byte-for-byte with a saved snapshot of the originals. The single paid run at the end of a step was then a confirmation, not a debugging session.
 
 ---
 
-# 14. What the Retrieval Results Actually Support
+## 10. Software tests
 
-The measurements support this claim:
+`uv run pytest` runs 173 tests in about 3 seconds, with no API keys. CI runs the same suite on every push.
 
-> On the frozen 10-case M14 development set, CrossEncoder reranking improved strict answer-bearing Hit@1, Hit@3, Hit@5, and MRR@5 compared with the measured FAISS baseline, while neighbor expansion provided answer-bearing context coverage for all 10 cases.
-
-They do **not** support claims such as:
-
-```text
-"The RAG system is 100% accurate."
-
-"The retriever will find every answer."
-
-"The architecture is production-ready at arbitrary scale."
-```
-
-The 100% figure applies only to **expanded-context evidence coverage on the frozen 10-case set**.
-
----
-
-# 15. M15 — End-to-End Agent Evaluation
-
-The M15 set contains:
-
-```text
-8 frozen end-to-end cases
-```
-
-composed of:
-
-```text
-3 structured-data cases
-5 private-knowledge cases
-```
-
-Each complete run is checked across multiple dimensions:
-
-```text
-skill
-expected tool
-arguments
-stop reason
-runtime errors
-answer requirements
-full-case pass
-```
-
-Final regression:
-
-| Dimension | Result |
-|---|---:|
-| Skill | **8/8** |
-| Tool | **8/8** |
-| Arguments | **8/8** |
-| Stop reason | **8/8** |
-| Error-free run | **8/8** |
-| Answer requirements | **8/8** |
-| Full end-to-end pass | **8/8 (100%)** |
-
-Again:
-
-> **8/8 means 8/8 on the current frozen development set. It is not a general production accuracy estimate.**
-
----
-
-# 16. Why End-to-End Evaluation Is Necessary
-
-Component evaluation can show:
-
-```text
-router works
-tool selection works
-retrieval improves
-```
-
-but the user interacts with the complete system.
-
-End-to-end evaluation therefore asks:
-
-```text
-Did the entire trajectory produce
-the expected system outcome?
-```
-
-This caught a problem that individual tool checks did not.
-
----
-
-# 17. M16 — Failure Analysis
-
-Pass/fail alone is not sufficient for debugging an agent.
-
-The project therefore introduced a deterministic failure taxonomy.
-
-Current categories include:
-
-```text
-routing_failure
-tool_selection_failure
-argument_failure
-tool_execution_failure
-guard_triggered
-termination_failure
-answer_failure
-```
-
-Retrieval-specific evidence failures remain part of the M14 retrieval analysis rather than being collapsed into a generic agent failure.
-
-After the final M16-driven fixes:
-
-```text
-0 classified failures
-```
-
-were recorded on the frozen 8-case M15 regression set.
-
----
-
-# 18. Case Study — Fuel Expense Failure
-
-The most important evaluation story in the project came from this question:
-
-> According to Delta's 2025 10-K, what percentage of operating expense was fuel in 2025, 2024, and 2023?
-
-The system initially failed.
-
-But the failure was not where a superficial inspection might suggest.
-
-The knowledge tool was being called successfully.
-
----
-
-# 19. Failure Chain
-
-```mermaid
-flowchart TB
-    E["E2E Case Fails"]
-    --> T["Knowledge Tool Was Invoked"]
-
-    T --> F["Failure Analysis"]
-
-    F --> P["Inspect Production Retrieval"]
-
-    P --> B["Production Registry Still Used<br/>Baseline Retriever"]
-
-    B --> I["Integrate Improved Retriever"]
-
-    I --> S["New Schema Validation Failure"]
-
-    S --> X["CrossEncoder Raw Score<br/>Can Fall Outside Bounded Contract"]
-
-    X --> A["Keep Reranking Score Internal<br/>Expose Compatible Bounded Score"]
-
-    A --> R["Run Full Regression"]
-
-    R --> PASS["8/8 E2E<br/>0 Classified Failures"]
-```
-
-This failure exposed two separate engineering problems.
-
----
-
-# 20. Problem 1 — Experimental Improvement Was Not in Production
-
-M14 had already produced an improved retriever.
-
-However, the production tool registry was still connected to the baseline retrieval implementation.
-
-This meant:
-
-```text
-evaluation experiment
-≠
-production execution path
-```
-
-The end-to-end test exposed that integration gap.
-
-The production registry was updated to use the improved retriever.
-
----
-
-# 21. Problem 2 — Interface Contract Failure
-
-After integrating improved retrieval, another problem appeared.
-
-CrossEncoder reranking produces a raw score useful for ranking.
-
-That score should not automatically be treated as a normalized similarity value.
-
-The existing external schema expected a bounded score.
-
-The solution was to preserve the reranking value internally while exposing a compatible bounded FAISS score through the external contract.
-
-This preserved:
-
-```text
-internal ranking semantics
-```
-
-without breaking:
-
-```text
-external tool schema
-```
-
----
-
-# 22. Recovered End-to-End Case
-
-After the retrieval and interface fixes, the case recovered the required approximate values:
-
-```text
-2025: 17.1%
-2024: 19.0%
-2023: 21.1%
-```
-
-The full M15 regression then returned to:
-
-```text
-8/8
-```
-
-with:
-
-```text
-0 classified failure records
-```
-
----
-
-# 23. What the Failure Case Demonstrated
-
-The case produced several engineering lessons:
-
-1. Correct skill selection is not enough.
-2. Correct tool selection is not enough.
-3. Successful tool execution is not enough.
-4. Experimental improvements must actually reach the production path.
-5. Retrieval scores have semantics and should respect interface contracts.
-6. Integration fixes can create new failures.
-7. Regression evaluation is required after a fix.
-8. Agent evaluation should inspect trajectories, not only final text.
-
-This case is one of the strongest reasons evaluation is treated as part of the architecture rather than a final reporting step.
-
----
-
-# 24. Software Regression Testing
-
-AI evaluation is complemented by deterministic pytest regression tests.
-
-Current suite status:
-
-```text
-24 passed
-```
-
-The suite covers deterministic contracts across the system.
-
-Representative areas include:
-
-| Area | Purpose |
+| Area | Examples |
 |---|---|
-| Skill routing | deterministic routing behavior |
-| API schemas | request/response validation |
-| API endpoints | health, validation, mocked agent flow |
-| Frontend serving | HTML/CSS/JavaScript routes |
-| Reliability | retry and error-classification behavior |
-| Action guards | approval/read-write policy enforcement |
-| Checkpointing | save/load/state restoration |
-| Observability | trace/event persistence |
-
-The exact test count per file may evolve as the suite grows; the current full regression contains **24 passing tests**.
+| Agent loop | Forced final answer at budget, repeated-call stop, invalid arguments returned to the model, web-before-private guard, follow-up rewriting, a failing progress listener not stopping the run |
+| Tools and registry | Generated strict JSON, per-skill tool offers, write tool never offered, MCP error classification, in-process vs MCP transport |
+| Data | Ranking, filters and calendar order on hand-built data; the DOT on-time figures on the real data |
+| RAG | Chunk overlap, page-aware PDF ingestion (with a blank page), whole-word routing |
+| API | Clean 500/503 errors without internals, question and history limits, SSE event order, feedback storage, startup warm-up switch, cache headers |
+| Packaging | Dockerfile model names match `config.py`; `.dockerignore` excludes secrets |
 
 ---
 
-# 25. Why pytest Is Separate From AI Evaluation
-
-pytest answers deterministic questions such as:
-
-```text
-Does empty API input return 422?
-
-Does the frontend route return HTML?
-
-Are static CSS and JavaScript served?
-
-Does a transient failure retry?
-
-Does a permanent error avoid unnecessary retry?
-
-Does an unapproved protected write remain blocked?
-
-Can checkpoint state round-trip?
-
-Can trace information be persisted?
-```
-
-Agent/retrieval evaluation asks different questions:
-
-```text
-Did the question route to the expected skill?
-
-Did the model choose the expected tool?
-
-Were the generated arguments correct?
-
-Did retrieval return answer-bearing evidence?
-
-Did the final answer contain the required information?
-```
-
-Combining these into one metric would obscure what failed.
-
----
-
-# 26. Frontend Testing
-
-M21 added a browser interface without changing the core agent.
-
-The API regression suite now verifies that:
-
-```text
-GET /
-→ serves the frontend
-
-GET /static/styles.css
-→ serves the stylesheet
-
-GET /static/app.js
-→ serves the JavaScript
-
-JavaScript
-→ contains the /ask API integration
-```
-
-The existing `/ask` test continues to mock `run_agent()`.
-
-Therefore routine frontend/API regression does not require:
-
-- OpenAI API calls;
-- real RAG execution;
-- real MCP execution.
-
-This keeps the deterministic test suite inexpensive.
-
----
-
-# 27. Reproducing the Evaluation
-
-From the repository root:
-
-```powershell
-uv run python -m agentic_bi.evaluation.routing_eval
-uv run python -m agentic_bi.evaluation.tool_selection_eval
-uv run python -m agentic_bi.evaluation.argument_eval
-uv run python -m agentic_bi.evaluation.retrieval_eval
-uv run python -m agentic_bi.evaluation.agent_end_to_end_eval
-```
-
-Some model-backed evaluation paths may consume API credits.
-
-Run deterministic software regression separately:
-
-```powershell
-uv run pytest
-```
-
-Current software regression:
-
-```text
-24 passed
-```
-
----
-
-# 28. Evaluation Principles
-
-## Freeze before optimizing
-
-Evaluation cases should remain fixed while comparing architectural changes.
-
-Otherwise, improvement can be confused with changing the test.
-
----
-
-## Evaluate trajectory, not only final text
-
-The project separately inspects:
-
-```text
-routing
-tool choice
-arguments
-execution
-termination
-answer requirements
-```
-
-A fluent answer alone is insufficient evidence.
-
----
-
-## Evaluate retrieval independently
-
-Generation should not hide poor retrieval.
-
-Answer-bearing evidence is therefore measured directly.
-
----
-
-## Keep ranked retrieval separate from context construction
-
-Reranking and neighbor expansion solve different problems.
-
-The metrics reflect that distinction.
-
----
-
-## Do not inflate results
-
-Expanded neighbor chunks are not assigned fake retrieval ranks.
-
-Small frozen datasets are identified as small frozen datasets.
-
----
-
-## Record failures
-
-Failures are retained as engineering evidence.
-
-The goal is to understand why the system failed and whether the fix survives regression.
-
----
-
-## Test deterministic contracts deterministically
-
-Routine software tests should not require model calls when the behavior being tested can be isolated.
-
----
-
-# 29. Limitations
-
-The current evaluation framework has important boundaries:
-
-- M13, M14, and M15 use small frozen development sets.
-- These sets are useful for regression and engineering comparison, not production confidence intervals.
-- The current retrieval set contains only 10 source-verified cases.
-- The end-to-end set contains only 8 cases.
-- Some answer checks use required information/terms rather than comprehensive semantic grading.
-- The domain is intentionally narrow.
-- Model-backed evaluation can vary with model version and configuration.
-- Expanded-context coverage measures evidence availability, not guaranteed answer correctness.
-- The current evaluation does not provide broad adversarial or security benchmarking.
-- The current measurements do not establish performance at production traffic or corpus scale.
-
----
-
-# 30. Future Evaluation Work
-
-Useful extensions include:
-
-- larger held-out datasets separate from development cases;
-- human relevance judgments from multiple annotators;
-- citation correctness metrics;
-- citation completeness metrics;
-- groundedness and faithfulness evaluation;
-- latency regression thresholds;
-- token/cost regression thresholds;
-- malformed-tool and adversarial-routing cases;
-- controlled model stubs for deeper API integration tests;
-- additional structured-data tools and corresponding evaluation cases;
-- retrieval metadata-filter evaluation;
-- evaluation under larger document collections.
-
-These should be added when they help answer a concrete reliability question rather than merely increasing the number of metrics.
-
----
-
-# 31. Final Perspective
-
-The most important evaluation result from this project is not:
-
-```text
-100%
-```
-
-It is the development loop:
-
-```text
-Build
-  ↓
-Freeze Cases
-  ↓
-Measure
-  ↓
-Observe Failure
-  ↓
-Classify Failure
-  ↓
-Investigate the Trajectory
-  ↓
-Change the Architecture
-  ↓
-Run Regression
-```
-
-That loop turned evaluation from a reporting step into an engineering tool.
-
-The project therefore treats evaluation not as proof that the system is universally correct, but as a disciplined way to make its behavior **measurable, debuggable, and progressively more reliable**.
----
-
-# 32. Refactor Baseline (2026-10-02)
-
-Recorded before the polish/refactor work. Every refactor phase is compared
-against these numbers; a regression blocks the phase.
-
-| Evaluation | Command | Result |
-|---|---|---|
-| pytest regression suite | `uv run python -m pytest` | 52/52 passed |
-| Skill routing | `python -m agentic_bi.evaluation.routing_eval` | 15/15 (100%) |
-| Tool selection | `python -m agentic_bi.evaluation.tool_selection_eval` | 15/15 (100%) |
-| Tool arguments | `python -m agentic_bi.evaluation.argument_eval` | 7/7 (100%) |
-| End-to-end (M15/M16) | `python -m agentic_bi.evaluation.agent_end_to_end_eval` | 8/8 (100%), 0 failure records |
-| Baseline retrieval (strict) | `python -m agentic_bi.evaluation.retrieval_eval` | Hit@1 50%, Hit@3 80%, Hit@5 80%, MRR@5 0.650 |
-| Reranked retrieval (strict) | `python -m agentic_bi.evaluation.improved_retrieval_eval` | Hit@1 60%, Hit@3 90%, Hit@5 90%, MRR@5 0.750 |
-| Expanded-context coverage | (same) | 10/10 (100%) |
-
-Added with the official-web fallback (same date; all rows above re-run with
-no regression, pytest now 62/62):
-
-| Evaluation | Command | Result |
-|---|---|---|
-| Interaction routing incl. web conditions | `python -m agentic_bi.evaluation.interaction_routing_eval` | 15/15 (100%) |
-
-LLM-backed evaluations are non-deterministic; small run-to-run variation is
-possible and should be re-run before being treated as a regression.
-
-# 33. After the Refactor (Steps 1–5, 2026-10-02)
-
-Re-run after the tool registry, agent split, in-process data tool, API
-hardening and eval clean-up. Tool JSON and prompts were verified
-byte-identical to the originals before these paid runs.
-
-| Evaluation | Command | Result | vs §32 |
-|---|---|---|---|
-| pytest | `uv run pytest` | 141/141 | +89 tests |
-| Skill routing | `uv run abi-eval-routing` | 15/15 | = |
-| Interaction routing | `uv run abi-eval-interaction` | 15/15 | = |
-| Tool selection | `uv run abi-eval-tools` | 15/15 | = |
-| Tool arguments | `uv run abi-eval-arguments` | 7/7 | = |
-| End-to-end | `uv run abi-eval-e2e` | 8/8, 0 failure records | = |
-| Baseline retrieval | `uv run abi-eval-retrieval` | Hit@3 80%, MRR@5 0.650 | = |
-| Reranked retrieval | `uv run abi-eval-reranked` | Hit@3 90%, MRR@5 0.750, coverage 10/10 | = |
-
-Live smoke test through the API: greeting, data, document, current-info
-and out-of-scope questions each took the expected route with zero errors
-(data and document answers about 8 s each).
+## 11. Limitations
+
+- **Small eval sets:** 8–15 cases per suite. A perfect score shows the designed behaviour holds on those cases, not that it generalises.
+- **Model drift:** results depend on the model in `OPENAI_MODEL` and can drift with model versions. Re-run the paid suites after changing it.
+- **Strict labels:** retrieval labels are strict. Answers built from other valid evidence may score as misses.
+- **Narrow answer checks:** the end-to-end answer checks look for required facts; they don't judge the whole answer's quality or faithfulness.
+- **Untested at scale:** there is no load, latency-under-concurrency or cost-regression testing.
+
+**Next measurements:** a larger held-out question set, citation correctness and faithfulness scoring, latency and token budgets per question type, and using the 👍/👎 feedback to find new failure cases.

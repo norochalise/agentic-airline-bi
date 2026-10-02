@@ -1,1243 +1,377 @@
 # Architecture
 
-> **October 2026 update.** The sections below describe the design as first built. The October 2026 refactor kept the behaviour (same evals, and byte-identical tool schemas and prompts) but changed the structure:
->
-> - **Routing:** an LLM interaction router runs first and maps the intent to a skill. The keyword router (§9) is now only a fallback. Greetings, app questions, out-of-scope requests and current-information questions are answered before the tool loop.
-> - **Tool registry (§10):** one `ToolSpec` per tool replaces the separate `TOOLS`, `FUNCTIONS`, schema, policy and access tables. The OpenAI tool JSON and the prompt's capability list are generated from it, and `action_guard` reads it.
-> - **Agent controller (§7):** `run_agent` is a pipeline: `interaction_gate` → `choose_skill` → `run_tool_loop` → `finish_run`. Each call goes through `handle_tool_call` (guards) and `execute_tool` (access policy → retry → output validation). The client, run store and tools are injected.
-> - **Data path (§11–12):** the flight tool runs in-process by default (about 0.02 s instead of about 2.3 s). MCP is opt-in with `TOOL_TRANSPORT=mcp`.
-> - **Web path:** a third tool, `search_official_web`, is offered only to knowledge-analysis, once, after a private search.
-> - **Knowledge results (§14):** each result carries `retrieval_type` and `rerank_score`; neighbour chunks have `score=None`.
-> - **Configuration:** `config.py` holds every path, setting and constant.
-> - **Persistence (§19):** run storage goes through `core/run_store.py` (keeps the newest `MAX_SAVED_RUNS`).
-> - **API (§6):** `/ask` returns `{detail, error_id}` on failure, caps questions at 2,000 characters, and the server loads models at startup.
->
-> See [`REFACTOR_JOURNEY.md`](REFACTOR_JOURNEY.md) for the step-by-step changes.
+How the Airline Intelligence Assistant is put together, and why.
 
-## 1. Overview
+The design follows one rule:
 
-Agentic Business Intelligence is designed around one principle:
+> **The LLM decides, orchestrates and explains. Deterministic code calculates. Retrieval supplies evidence.**
 
-> **Use the LLM for orchestration and language reasoning while delegating deterministic computation and evidence retrieval to specialized tools.**
-
-The system supports two primary workloads:
-
-1. **Structured business-data analysis** over Delta-marketed U.S. domestic flight data.
-2. **Grounded private-document analysis** over a small Delta/DOT document corpus.
-
-Both paths are coordinated by the same bounded agent controller and share validation, reliability, safety, observability, checkpointing, and evaluation infrastructure.
-
-The architecture intentionally separates:
-
-```text
-reasoning
-computation
-retrieval
-protocols
-interfaces
-state
-reliability
-evaluation
-presentation
-```
-
-rather than placing all responsibilities inside one model prompt.
+Contents:
+1. [System overview](#1-system-overview)
+2. [Request lifecycle](#2-request-lifecycle)
+3. [Interaction gate](#3-interaction-gate)
+4. [Skills](#4-skills)
+5. [The bounded tool loop](#5-the-bounded-tool-loop)
+6. [Tool registry](#6-tool-registry)
+7. [Data path](#7-data-path)
+8. [Knowledge path (RAG)](#8-knowledge-path-rag)
+9. [Official-web path](#9-official-web-path)
+10. [Reliability and safety](#10-reliability-and-safety)
+11. [Observability and persistence](#11-observability-and-persistence)
+12. [API](#12-api)
+13. [Frontend](#13-frontend)
+14. [Configuration](#14-configuration)
+15. [Packaging and CI](#15-packaging-and-ci)
+16. [Design decisions](#16-design-decisions)
+17. [Boundaries](#17-boundaries)
 
 ---
 
-## 2. System Architecture
+## 1. System overview
 
 ```mermaid
 flowchart TB
-    USER["Browser / API Client"]
+    UI["Chat UI<br/>HTML/CSS/JS"] -->|"POST /ask/stream (SSE)"| API["FastAPI<br/>validation · error ids · warm-up"]
+    API --> FU["Follow-up rewriter<br/>(only with history)"]
+    FU --> GATE["Interaction gate<br/>LLM intent classifier"]
 
-    USER --> API["FastAPI"]
+    GATE -->|greeting · app info · out of scope| DIRECT["Direct reply"]
+    GATE -->|current information| CUR["Official-web answer"]
+    GATE -->|data / documents| SKILL["Skill: data-analysis<br/>or knowledge-analysis"]
 
-    API --> VALID["Pydantic<br/>Request Validation"]
-    VALID --> AGENT["Bounded Agent Controller<br/>run_agent()"]
+    SKILL --> LOOP["Bounded tool loop<br/>budgets · guards · retries"]
+    LOOP --> REG["ToolSpec registry"]
 
-    AGENT --> ROUTER["Deterministic<br/>Skill Router"]
+    REG --> T1["Flight analytics<br/>pandas"]
+    REG --> T2["Knowledge search<br/>FAISS + reranker"]
+    REG --> T3["Official-web search<br/>Exa, allow-listed domains"]
 
-    ROUTER -->|data-analysis| DATA["Structured Data Path"]
-    ROUTER -->|knowledge-analysis| KNOW["Knowledge / RAG Path"]
-
-    DATA --> REG["Tool Registry"]
-    REG --> MCP["MCP Adapter"]
-    MCP --> MCPS["MCP Server"]
-    MCPS --> FLIGHT["Flight Analysis Tool"]
-    FLIGHT --> CSV[("July 2026<br/>Flight CSV")]
-    CSV --> PANDAS["pandas<br/>Deterministic Computation"]
-
-    KNOW --> KTOOL["Private Knowledge Tool"]
-    KTOOL --> EMB["MiniLM<br/>Query Embedding"]
-    EMB --> FAISS[("FAISS Index")]
-    FAISS --> RERANK["CrossEncoder<br/>Reranking"]
-    RERANK --> NEIGHBOR["Neighbor<br/>Context Expansion"]
-    NEIGHBOR --> CORPUS[("Delta / DOT<br/>Document Corpus")]
-
-    PANDAS --> AGENT
-    CORPUS --> AGENT
-
-    AGENT --> REL["Reliability Layer<br/>Validation • Retry • Guards"]
-    REL --> ANSWER["Final Answer"]
-
-    AGENT -.-> TRACE["Structured Trace Events"]
-    TRACE --> TRACEFILE[("JSON Traces")]
-
-    AGENT -.-> CHECK["State Checkpoints"]
-    CHECK --> CHECKFILE[("Checkpoint JSON")]
-
-    ANSWER --> API
-    API --> USER
-
-    EVAL["Evaluation<br/>Routing • Tools • Arguments<br/>Retrieval • E2E • Failures"] -.-> AGENT
-
-    TEST["pytest<br/>141 Passing Tests"] -.-> API
-    TEST -.-> REL
-    TEST -.-> TRACE
+    LOOP -.-> STORE[("Traces + checkpoints")]
+    API -.-> FB[("Feedback")]
 ```
 
-The system has one orchestration layer but two fundamentally different evidence/computation paths.
-
-That distinction is deliberate.
+| Package | Responsibility |
+|---|---|
+| `api/` | FastAPI app, request and response schemas, SSE progress, chart specs, `abi-serve` |
+| `core/` | Agent pipeline, interaction routing, follow-ups, prompts, schemas, guards, retries, traces, run store |
+| `tools/` | `ToolSpec` registry and tool implementations: flight analytics, knowledge search, web search |
+| `rag/` | Loading, chunking, embeddings, FAISS, reranking |
+| `mcp/` | MCP server and client for the cancellation tool |
+| `skills/` | Keyword fallback router and skill loader (instructions live in `skills/<name>/SKILL.md`) |
+| `evaluation/` | Eval scripts and shared metrics |
+| `frontend/` | Chat UI, with no agent logic |
+| `config.py` | Every path, setting and constant |
 
 ---
 
-## 3. Request Lifecycle
+## 2. Request lifecycle
 
-A browser request and a direct API request eventually enter the same agent.
-
-```mermaid
-sequenceDiagram
-    actor User
-    participant UI as Browser UI
-    participant API as FastAPI
-    participant Agent as Agent Controller
-    participant Router as Skill Router
-    participant Registry as Tool Registry
-    participant MCP as MCP / Data Tool
-    participant RAG as RAG Pipeline
-    participant Obs as Observability
-
-    User->>UI: Ask business question
-    UI->>API: POST /ask
-    API->>API: Validate AskRequest
-
-    API->>Agent: run_agent(question)
-    Agent->>Obs: agent_started
-
-    Agent->>Router: select_skill(question)
-    Router-->>Agent: selected skill
-    Agent->>Obs: skill_selected
-
-    alt data-analysis
-        Agent->>Registry: request structured tool
-        Registry->>MCP: typed MCP call
-        MCP-->>Agent: validated computation
-    else knowledge-analysis
-        Agent->>Registry: search_private_knowledge
-        Registry->>RAG: retrieve + rerank + expand
-        RAG-->>Agent: source/page evidence
-    end
-
-    Agent->>Obs: tool_completed
-    Agent->>Obs: checkpoint_saved
-    Agent->>Agent: synthesize final answer
-    Agent->>Obs: final checkpoint
-    Agent->>Obs: agent_finished
-
-    Agent-->>API: AgentResult
-    API-->>UI: AskResponse JSON
-    UI-->>User: answer + execution metadata
-```
-
-The frontend never bypasses the API or calls tools directly.
-
----
-
-# 4. Architectural Layers
-
-The project can be understood as a set of cooperating layers:
+`run_agent()` in `core/agent.py` is a short pipeline:
 
 ```text
-Presentation
-    ↓
-Service Interface
-    ↓
-Agent Orchestration
-    ↓
-Skill Routing
-    ↓
-Tool Registry
-    ↓
-Capability Execution
-    ↓
-Data / Knowledge Sources
+[condense_question]  follow-up -> standalone question (only with history)
+interaction_gate     classify; answer early exits directly
+choose_skill         intent -> skill (keyword router as fallback)
+run_tool_loop        model <-> tools under budgets and guards
+finish_run           final checkpoint, trace, AgentResult
 ```
-
-Cross-cutting concerns operate around those layers:
-
-```text
-Validation
-Reliability
-Safety
-State
-Observability
-Checkpointing
-Evaluation
-Testing
-```
-
-This separation is important because each concern answers a different engineering question.
-
----
-
-# 5. Presentation Layer
-
-## `frontend/`
-
-The browser interface consists of:
-
-```text
-frontend/
-├── index.html
-├── styles.css
-└── app.js
-```
-
-It is intentionally lightweight and contains no agent intelligence.
-
-Its responsibility is:
-
-```text
-collect question
-      ↓
-POST /ask
-      ↓
-receive structured response
-      ↓
-display answer
-      ↓
-display execution metadata
-```
-
-The interface exposes:
-
-```text
-selected skill
-stop reason
-step count
-tool-call count
-knowledge-search count
-data-analysis count
-error count
-run ID
-```
-
-This makes the agent execution visible rather than presenting only a chatbot answer.
-
-The frontend uses `textContent` when presenting generated answer text instead of inserting model output as raw HTML.
-
----
-
-# 6. API Layer
-
-## `api/app.py`
-
-FastAPI acts as a thin service boundary over the reusable agent.
-
-Current endpoints:
-
-```text
-GET  /
-GET  /health
-POST /ask
-```
-
-Static frontend assets are mounted under:
-
-```text
-/static
-```
-
-The application serves:
-
-```text
-/
-→ frontend/index.html
-
-/static/styles.css
-→ frontend stylesheet
-
-/static/app.js
-→ frontend JavaScript
-```
-
-The `/ask` flow is:
-
-```text
-AskRequest
-    ↓
-run_agent()
-    ↓
-AgentResult
-    ↓
-AskResponse
-```
-
-The API does not duplicate:
-
-- skill routing;
-- MCP logic;
-- RAG logic;
-- retry behavior;
-- business calculations;
-- agent orchestration.
-
-This keeps the agent independently reusable from Python.
-
-## `api/schemas.py`
-
-The API uses Pydantic contracts for request and response validation.
-
-An empty question is rejected before agent execution.
-
-The response exposes both the final answer and execution metadata.
-
----
-
-# 7. Agent Controller
-
-## `core/agent.py`
-
-The main reusable orchestration entry point is:
 
 ```python
 run_agent(
-    question: str,
-    verbose: bool = False,
+    question,
+    verbose=False,
+    *,
+    client=None,     # OpenAI client; defaults to one shared instance
+    store=None,      # RunStore; defaults to disk (or memory if PERSIST_RUNS=false)
+    tools=None,      # ToolSpec mapping; defaults to the registry
+    history=None,    # earlier turns, for follow-ups
+    on_event=None,   # live progress listener (used by /ask/stream)
 ) -> AgentResult
 ```
 
-`AgentResult` exposes the completed run:
+Every collaborator is injected, so the tests run the real pipeline with fake clients and tools and make no paid calls.
 
-```text
-goal
-selected_skill
-final_answer
-stop_reason
-step_count
-tool_call_count
-knowledge_search_count
-data_analysis_count
-tool_history
-observations
-errors
-trace
-```
-
-The controller is responsible for:
-
-1. initializing state;
-2. creating an execution trace;
-3. selecting a skill;
-4. entering the bounded agent loop;
-5. accepting model tool requests;
-6. validating tool arguments;
-7. enforcing execution guards;
-8. executing the registered tool;
-9. validating structured output;
-10. recording observations;
-11. saving checkpoints;
-12. continuing or terminating;
-13. synthesizing the final answer;
-14. persisting final execution information.
-
-The controller coordinates capabilities rather than implementing business calculations itself.
+**Follow-ups.** When `history` is present, `core/followup.py` makes one model call that rewrites, for example, "and for JFK?" into a self-contained question. The conversation is framed as untrusted data, and an empty or runaway rewrite falls back to the user's words. Everything downstream (routing, tools, evals) sees only the standalone question.
 
 ---
 
-# 8. Explicit Agent State
+## 3. Interaction gate
 
-## `core/state.py`
+`core/interaction.py` asks the model to classify the question with a strict JSON schema into one of six intents:
 
-`AgentState` records runtime progress.
+| Intent | Handling |
+|---|---|
+| `conversation`, `app_info`, `out_of_scope` | Fixed reply from `core/interaction_response.py`; no tools |
+| `current_airline_info` | `tools/delta_current_info.py` searches official sites and writes a grounded answer; no tool loop |
+| `airline_data` | → `data-analysis` skill |
+| `airline_knowledge` | → `knowledge-analysis` skill |
 
-Representative state:
-
-```text
-goal
-step_count
-tool_call_count
-selected_skill
-stop_reason
-tool_history
-observations
-errors
-```
-
-Making state explicit provides several benefits:
-
-```text
-bounded execution
-debugging
-observability
-checkpointing
-evaluation
-failure analysis
-```
-
-Without explicit state, these concerns would have to be reconstructed indirectly from model messages or console output.
+The router prompt lists exactly what the local documents and dataset cover. A question whose topic is outside them, such as bag fees or pet travel, or one that asks for current or live information, goes to the official-web path rather than being answered from memory.
 
 ---
 
-# 9. Skill Routing
+## 4. Skills
 
-## `skills/router.py`
+A skill is a set of instructions added to the agent's system prompt: `skills/data-analysis/SKILL.md` or `skills/knowledge-analysis/SKILL.md`. It also decides which tools are offered.
 
-The current system supports two skills:
-
-```text
-data-analysis
-knowledge-analysis
-```
-
-Routing is deterministic.
-
-Keyword and phrase scoring determines whether a question concerns structured flight data or the private-document corpus.
-
-The router can return:
-
-```text
-data-analysis
-knowledge-analysis
-None
-```
-
-rather than forcing every question into an inappropriate skill.
-
-### Why not another model call?
-
-There are currently only two routing targets.
-
-A deterministic router is:
-
-- cheaper;
-- inspectable;
-- reproducible;
-- easy to evaluate;
-- sufficient for the current routing space.
-
-Model-based routing can be introduced later if the number or ambiguity of skills makes deterministic routing inadequate.
+The skill normally comes from the intent (`INTENT_TO_SKILL`). The deterministic keyword router in `skills/router.py` is only a fallback for unmapped intents. It uses whole-word matching from `core/text_match.py`, so "rate" never matches "corporate".
 
 ---
 
-# 10. Tool Registry
-
-## `tools/registry.py`
-
-The registry centralizes the connection between model-visible tool definitions and executable Python capabilities.
-
-It contains structures such as:
+## 5. The bounded tool loop
 
 ```text
-TOOLS
-FUNCTIONS
-INPUT_SCHEMAS
-OUTPUT_SCHEMAS
-TOOL_POLICIES
+model call (instructions + offered tools)
+   │
+   ├─ no function calls ─────────────► final answer
+   │
+   └─ function calls ─► handle_tool_call (guards)
+                           └─ execute_tool: access policy → retry → output validation
+                       ─► tool outputs back to the model
+                       ─► budget spent? next call has no tools → forced final answer
 ```
 
-Conceptually:
+**Guards in `handle_tool_call`:**
 
-```text
-Model
-   ↓
-Tool Schema
-   ↓
-Registry
-   ↓
-Validated Arguments
-   ↓
-Python Capability
-   ↓
-Validated Result
-```
+| Guard | Effect |
+|---|---|
+| `MAX_STEPS` (4), `MAX_TOOL_CALLS` (4) | Stop the run |
+| Tool not offered to this skill | Stop (`blocked_unknown_tool`) |
+| Invalid JSON or arguments | Error returned to the model so it can correct itself |
+| Repeated identical call | Stop (`repeated_tool_call`) |
+| Web search before any private search | Error returned to the model (`web_before_private_search`) |
+| Per-tool budget (`max_calls_per_run`) | Stop (`<tool>_budget_exceeded`) |
 
-This prevents the controller from accumulating hard-coded knowledge about every capability.
+When a tool listed in `FINAL_ANSWER_TRIGGERS` reaches its budget, the next model call carries no tools and the model must answer. Stop reasons, trace event names and `error_type` values are stable, because the tests and evals assert them.
 
 ---
 
-# 11. Structured Data Path
+## 6. Tool registry
 
-The structured path handles quantitative questions over flight data.
-
-Current primary capability:
+`tools/registry.py` defines each tool once, as a `ToolSpec`:
 
 ```python
-analyze_top_origin_cancellation_rates(
-    min_flights: int,
-    top_n: int,
-)
+@dataclass(frozen=True)
+class ToolSpec:
+    name: str
+    description: str
+    func: Callable[..., dict]
+    input_model: type[BaseModel]      # validates arguments; generates the model-facing JSON schema
+    output_model: type[BaseModel]     # validates results
+    prompt_summary: str = ""          # capability line in the system prompt
+    category: Literal["knowledge", "data", "web", "action"] = "data"
+    access: Literal["read", "write"] = "read"
+    requires_approval: bool = False
+    max_attempts: int = 1
+    max_calls_per_run: int | None = None
+    skills: frozenset[str | None] | None = None   # None = every skill
+    offered_to_model: bool = True
 ```
 
-The underlying dataset contains Delta-marketed U.S. domestic flights for July 2026.
+Everything else is **generated** from the spec:
+- the OpenAI strict-mode tool JSON
+- the prompt's capability list (only the tools offered to the skill)
+- the access policy used by `core/action_guard.py`
+- the per-run counters reported in `AgentResult`
 
-Relevant fields include:
+When the registry replaced seven hand-maintained tables, the generated tool JSON and prompts were verified **byte-identical** to the originals before any paid evaluation.
 
-```text
-FlightDate
-Origin
-Dest
-DepDelayMinutes
-ArrDelayMinutes
-Cancelled
-CancellationCode
-Diverted
-CarrierDelay
-WeatherDelay
-NASDelay
-SecurityDelay
-LateAircraftDelay
-Distance
-```
+| Tool | Category | Offered to | Budget |
+|---|---|---|---|
+| `search_private_knowledge` | knowledge | all skills | 2 |
+| `analyze_top_origin_cancellation_rates` | data | all skills | 1 |
+| `rank_flight_performance` | data | data-analysis | 2 |
+| `analyze_delay_causes` | data | data-analysis | 2 |
+| `search_official_web` | web | knowledge-analysis | 1 |
+| `issue_customer_credit` (mock write) | action | never offered | — |
 
-The analysis function:
-
-1. loads the local CSV;
-2. groups flights by origin;
-3. counts total flights;
-4. counts cancellations;
-5. applies the requested minimum-flight threshold;
-6. calculates cancellation rates;
-7. sorts results;
-8. returns the requested top N;
-9. validates the structured output.
-
-The model does not perform these calculations from raw rows.
-
-That is a deliberate reliability boundary:
-
-> **Deterministic business questions should use deterministic computation.**
+The pydantic `Field(description=...)` text in `core/schemas.py` is what the model reads, so editing it changes behaviour.
 
 ---
 
-# 12. MCP Capability Boundary
+## 7. Data path
 
-The structured flight-analysis capability is exposed through MCP.
+The dataset holds 149,051 Delta-marketed U.S. domestic flights from July 2026, across 211 airports and four operating carriers: DL, OO, 9E and YX. It is loaded once per process and cached.
 
-Current package:
+| Tool | What it computes |
+|---|---|
+| `analyze_top_origin_cancellation_rates` | Origin airports ranked by cancellation rate, above a volume floor |
+| `rank_flight_performance` | Group by origin, destination, route, operating carrier, date or weekday; rank by cancellation rate, on-time arrival rate, average arrival/departure delay, diversion rate or flight count; filter by airport; compare named groups (`only`); calendar order for time groupings |
+| `analyze_delay_causes` | Delay minutes by cause (carrier, weather, NAS, security, late aircraft) and cancellations by reason code, optionally for one airport or carrier |
 
-```text
-mcp/
-├── server.py
-└── tools.py
-```
+**Metric definitions** follow the DOT Air Travel Consumer Report:
+- **On time:** a flight is on time when it is completed and arrives less than 15 minutes late. Cancelled and diverted flights count as *not* on time. This reproduces the report's July 2026 figures exactly: 71.7% for the Delta network and 71.9% for DL mainline. A test pins both.
+- **Average delay:** uses completed flights; early arrivals count as 0.
+- **Delay causes:** cover only flights at least 15 minutes late.
 
-The architecture is:
+**Transport.** The cancellation tool runs in-process by default, in 0.02 s. `TOOL_TRANSPORT=mcp` routes it through the MCP server in `mcp/` instead, as one subprocess per call taking about 2.3 s. That keeps the MCP integration demonstrable without making every request pay for it.
 
-```text
-pandas business function
-          ↓
-      MCP server
-          ↓
-    MCP client/adapter
-          ↓
-      tool registry
-          ↓
-         agent
-```
-
-The MCP server exposes the capability with typed inputs and structured output.
-
-The adapter lets the synchronous agent consume the MCP capability without moving business logic into the protocol layer.
-
-### Architectural role of MCP
-
-MCP provides a standardized capability boundary.
-
-It does **not** replace:
-
-- the pandas calculation;
-- Pydantic validation;
-- agent orchestration;
-- business rules.
-
-The business function remains independently understandable and testable Python.
+**Charts.** `api/charts.py` turns each successful data-tool result into a chart spec (title, unit, labelled rows) without recomputing anything. The UI draws it.
 
 ---
 
-# 13. Private Knowledge / RAG Path
+## 8. Knowledge path (RAG)
 
-The second major path handles questions that require evidence from private documents.
+**Corpus:**
+- the Delta 2025 Form 10-K
+- the Domestic Contract of Carriage (plain language, August 2026)
+- the Customer Service Plan
+- the DOT Air Travel Consumer Report (September 2026, covering July data)
 
-## Corpus
-
-The current corpus contains:
-
-- Delta 2025 Form 10-K;
-- Delta Domestic Contract of Carriage;
-- Delta Customer Service Plan;
-- one 2026 U.S. DOT Air Travel Consumer Report.
-
-Document ingestion produced approximately:
+**Offline indexing** is done by `scripts/build_embedding_cache.py`, then `scripts/build_faiss_index.py`:
 
 ```text
-700 chunks
+load (PDF per page, TXT whole) → chunk (180 words, 30 overlap) → embed (MiniLM, normalized)
+→ FAISS inner-product index      →  data/processed/rag/  (700 chunks × 384 dims)
 ```
 
-with source and page metadata preserved.
+Chunk IDs are `<file-stem>:p<page>:c<n>` for PDFs and `<file-stem>:c<n>` for text files. Stored paths are project-relative.
+
+**Query time** (`run_knowledge_search`):
+
+```text
+question → MiniLM embedding → FAISS top 15 → cross-encoder rerank → top 5
+         → add previous/next chunk from the same document → context for the model
+```
+
+Each result carries:
+- `retrieval_type`: `reranked`, `neighbor_previous` or `neighbor_next`
+- the FAISS `score`
+- the cross-encoder `rerank_score`
+
+Neighbour chunks get `score=None`, never a fabricated rank, so the model can tell primary evidence from surrounding context.
 
 ---
 
-# 14. Retrieval Pipeline
+## 9. Official-web path
 
-The improved knowledge path uses multiple retrieval stages.
+`tools/delta_official_web.py` searches with Exa. Results come only from an allow-list (`ALLOWED_DOMAINS`): delta.com, transportation.gov, faa.gov and bts.gov, including their subdomains. Any other URL is dropped, even if the search provider returns it.
 
-```mermaid
-flowchart LR
-    Q["Question"]
-    --> E["MiniLM<br/>Query Embedding"]
-    --> F["FAISS<br/>Top 15 Candidates"]
-    --> R["CrossEncoder<br/>Reranking"]
-    --> T["Top 5<br/>Ranked Evidence"]
-    --> N["Neighbor<br/>Expansion"]
-    --> C["Source/Page<br/>Evidence Context"]
-    --> A["Grounded Answer"]
-```
+It is reached in two ways:
+- **directly,** for `current_airline_info` questions;
+- **as a fallback** inside `knowledge-analysis`: one web search, allowed only after a private search, when the documents don't cover the question or the user asks whether a document is still current.
 
-## Embedding model
-
-```text
-sentence-transformers/all-MiniLM-L6-v2
-```
-
-Embeddings are generated locally.
-
-## Vector search
-
-FAISS performs efficient dense candidate retrieval.
-
-## Reranker
-
-```text
-cross-encoder/ms-marco-MiniLM-L6-v2
-```
-
-The CrossEncoder evaluates query-document pairs more deeply than the initial vector similarity stage.
-
-## Neighbor expansion
-
-Adjacent chunks can be added after reranking when evidence crosses chunk boundaries.
-
-The architecture therefore distinguishes:
-
-```text
-reranked_results
-```
-
-from:
-
-```text
-context_results
-```
-
-This distinction is important both technically and for evaluation.
-
-Neighbor chunks can improve final context without pretending they occupied ranked retrieval positions.
+Web content is framed as untrusted data. When web and document evidence disagree, the answer reports both.
 
 ---
 
-# 15. Validation Boundary
+## 10. Reliability and safety
 
-Pydantic is used at several system boundaries.
-
-## API validation
-
-```text
-external request
-      ↓
-AskRequest
-```
-
-## Tool argument validation
-
-```text
-model-generated arguments
-          ↓
-typed input schema
-```
-
-## Tool result validation
-
-```text
-Python capability result
-          ↓
-typed output schema
-```
-
-Validation helps prevent malformed data from silently crossing architectural boundaries.
-
-It also makes tool contracts explicit.
+- **Validation on both sides:** pydantic validates tool arguments and tool results.
+- **Error taxonomy** (`core/reliability.py`): `TransientToolError` and `ToolTimeoutError` are retried with exponential backoff, up to the spec's `max_attempts`. Business-rule, validation and permanent errors fail immediately. The MCP client classifies only connection and timeout failures as transient.
+- **Write actions:** every call passes `enforce_action_policy`. A `write` tool that `requires_approval` raises `ApprovalRequiredError` unless approved. The mock credit action also blocks duplicates with an idempotency key. No real write system is connected.
+- **Prompt-injection hygiene:** retrieved, web and conversation content is labelled as data, not instructions. UI labels from tool output are inserted with `textContent`.
 
 ---
 
-# 16. Reliability Layer
+## 11. Observability and persistence
 
-## `core/reliability.py`
+Every run produces a structured trace (`core/observability.py`) with a run ID, timestamps, tool durations and events such as:
+- `agent_started`, `question_rewritten`, `interaction_classified`, `skill_selected`
+- `tool_started` / `tool_completed`, `guard_triggered`
+- `checkpoint_saved`, `agent_finished`
 
-The reliability layer distinguishes between different failure types.
+Application-state checkpoints are saved after each successful tool observation and at the end. `restore_agent_state` rebuilds `AgentState`. This restores application state; it is not durable resumption of an interrupted model conversation.
 
-Representative categories include:
-
-```text
-TransientToolError
-ToolTimeoutError
-BusinessRuleError
-PermanentToolError
-```
-
-`execute_with_retry()` provides bounded retry with backoff.
-
-Retry policy is selective.
-
-For example:
-
-```text
-temporary connectivity problem
-→ potentially retry
-
-timeout
-→ potentially retry
-
-invalid business input
-→ do not blindly retry
-
-permanent failure
-→ do not blindly retry
-```
-
-Tool-specific policies determine the allowed number of attempts.
-
-The project intentionally avoids the pattern:
-
-```text
-catch every exception
-→ retry everything
-```
-
-because retries are only useful when another attempt can plausibly change the outcome.
+Storage goes through a `RunStore` (`core/run_store.py`):
+- `FileRunStore` writes to `data/traces/` and `data/checkpoints/`. It keeps the newest `MAX_SAVED_RUNS` (default 500) and never prunes the run being saved.
+- `MemoryRunStore` is used by tests and when `PERSIST_RUNS=false`.
 
 ---
 
-# 17. Execution Guards
+## 12. API
 
-The bounded controller includes explicit execution limits.
+| Endpoint | Purpose |
+|---|---|
+| `GET /` and `/static/*` | Chat UI, served with `Cache-Control: no-cache` |
+| `GET /health` | Liveness |
+| `POST /ask` | Run the agent and return `AskResponse` |
+| `POST /ask/stream` | The same work as Server-Sent Events: `progress` events, then one `result` or `error` |
+| `POST /feedback` | Append `{run_id, rating, comment}` to `data/feedback/feedback.jsonl` |
 
-Examples include:
+`AskRequest` caps questions at 2,000 characters and history at 6 messages. `AskResponse` returns:
+- the answer and the question as understood
+- the route and stop reason
+- counters for steps, tool calls, searches and analyses
+- labelled sources and chart specs
 
-```text
-maximum steps
-maximum tool calls
-repeat-call protection
-knowledge-search limits
-data-analysis limits
-invalid-input handling
-explicit stop reasons
-```
+**Failures.** `/ask` and `/ask/stream` share `_answer()`. A failure returns `{detail, error_id}`: 503 for missing configuration, 500 otherwise. The traceback is logged under the same ID and never sent to the client.
 
-These controls prevent the agent loop from operating indefinitely or repeatedly issuing identical work.
+**Startup.** The lifespan hook refuses to start without `OPENAI_API_KEY` and `OPENAI_MODEL`, and warns if `EXA_API_KEY` is missing. It then loads the FAISS index, embedding model, reranker and flight data (about 13 s cold), so the first user doesn't wait.
 
-Autonomy is therefore constrained by code rather than only by prompt instructions.
-
----
-
-# 18. Read / Write Safety Boundary
-
-The primary Agentic BI workflow is read-only.
-
-The project separately demonstrates how consequential capabilities can be protected.
-
-## `core/action_guard.py`
-
-The action guard maintains tool access policies and enforces approval requirements before protected execution.
-
-Conceptually:
-
-```text
-Agent requests action
-        ↓
-Lookup access policy
-        ↓
-Read action?
-   ├── yes → execute
-   └── no
-        ↓
-Write action?
-        ↓
-Explicit approval present?
-   ├── no  → block
-   └── yes → execute
-```
-
-The policy check occurs before the underlying function is executed.
-
-The project also demonstrates duplicate/idempotency protection for a mock consequential action.
-
-No real Delta write system is connected.
-
-The purpose is to demonstrate the architectural boundary required before an agent is allowed to perform consequential actions.
+**Streaming.** `/ask/stream` runs the agent in a worker thread. The agent's `on_event` listener feeds a queue that becomes SSE, and `api/progress.py` maps trace events to plain-language status lines.
 
 ---
 
-# 19. Observability
+## 13. Frontend
 
-## `core/observability.py`
+Plain HTML, CSS and JavaScript served by FastAPI. There is no build step and no agent logic.
 
-Agent execution is represented by structured events rather than relying only on terminal output.
-
-Representative trace:
-
-```text
-agent_started
-skill_selected
-tool_started
-tool_completed
-checkpoint_saved
-agent_finished
-```
-
-Trace information includes:
-
-```text
-run ID
-question
-UTC timestamps
-event payloads
-tool duration
-stop reason
-total duration
-```
-
-Traces are serialized as JSON.
-
-This makes a completed run inspectable after execution.
+- **Chat thread:**
+  - suggestion cards and a light/dark theme
+  - a "Demo" badge and disclaimer
+  - grouped sources and collapsible run details
+  - 👍/👎 feedback
+- **Live progress:** the stream is read with `fetch` plus a stream reader, because `EventSource` can't POST.
+- **Follow-ups:** the last three exchanges are sent as history, and "Answered as: …" appears when a question was rewritten.
+- **Charts:** single-series horizontal bars.
+  - Bars start from a zero baseline, with the value at each bar's tip.
+  - Each bar shows a tooltip on hover and keyboard focus.
+  - A table toggle shows the same values.
+  - The accent colour was validated for contrast and colour-blindness against both theme surfaces.
+- **Hardening:** the pinned CDN scripts (marked, DOMPurify) carry SRI hashes, and rendered Markdown is sanitized.
 
 ---
 
-# 20. Checkpointing
+## 14. Configuration
 
-## `core/checkpoint.py`
+`config.py` is the only place that:
+- resolves the project root and derives paths
+- loads `.env`
+- holds constants: models, `RETRIEVAL_CANDIDATE_K=15`, `RETRIEVAL_TOP_K=5` and the agent limits
 
-Checkpoints serialize `AgentState`.
+Settings are read **at call time** through functions such as `openai_model()`, `exa_api_key()`, `tool_transport()` and `persist_runs()`. A missing value raises `ConfigError` naming the variable.
 
-Current checkpoints are created:
-
-- after successful tool observations;
-- at final termination.
-
-A stored checkpoint can be loaded and converted back into application state.
-
-Conceptually:
-
-```text
-AgentState
-    ↓
-checkpoint_to_dict()
-    ↓
-JSON
-    ↓
-load_checkpoint()
-    ↓
-restore_agent_state()
-    ↓
-AgentState
-```
-
-## Scope boundary
-
-Checkpointing currently provides:
-
-> **application-state restoration**
-
-It does not provide:
-
-> complete durable replay/resume of an interrupted external model conversation.
-
-The system does not persist all external model-conversation state required to resume an interrupted response at the exact point of failure.
-
-A durable workflow engine would be a separate architectural capability.
+| Setting | Default |
+|---|---|
+| `OPENAI_API_KEY`, `OPENAI_MODEL` | required |
+| `EXA_API_KEY` | needed for web answers |
+| `TOOL_TRANSPORT` | `inprocess` (or `mcp`) |
+| `PERSIST_RUNS`, `MAX_SAVED_RUNS` | `true`, `500` |
+| `WARM_UP_ON_STARTUP` | `true` |
 
 ---
 
-# 21. Agent Result Boundary
+## 15. Packaging and CI
 
-Completed execution is returned through `AgentResult`.
-
-This prevents FastAPI, tests, or future clients from needing direct access to internal mutable state.
-
-The API converts:
-
-```text
-AgentResult
-```
-
-into:
-
-```text
-AskResponse
-```
-
-The response currently exposes:
-
-```text
-answer
-selected_skill
-stop_reason
-run_id
-step_count
-tool_call_count
-knowledge_search_count
-data_analysis_count
-error_count
-```
-
-This creates a stable interface between orchestration and external clients.
+- **Python packaging:** `uv`, with a locked environment. Console scripts are `abi-serve` and `abi-eval-*`.
+- **CPU-only torch on Linux:** torch comes from PyTorch's CPU index on Linux (`[tool.uv.sources]`), which keeps several GB of CUDA libraries out of the image and CI.
+- **Docker:** `python:3.13-slim`, with the models and data baked in and `HF_HUB_OFFLINE=1` at runtime. It runs as a non-root user with a health check. `docker-compose.yml` reads `.env` and keeps traces, checkpoints and feedback in volumes.
+- **CI** (`.github/workflows/ci.yml`): `uv sync --frozen`, ruff lint and format check, and pytest with coverage. The tests use fake model clients, so no secrets are needed. CI then builds the Docker image.
 
 ---
 
-# 22. Evaluation Architecture
+## 16. Design decisions
 
-AI-system behavior is evaluated separately from ordinary software testing.
-
-The evaluation stack contains:
-
-```text
-Routing Evaluation
-Tool Selection Evaluation
-Argument Evaluation
-Retrieval Evaluation
-End-to-End Agent Evaluation
-Failure Analysis
-```
-
-Conceptually:
-
-```mermaid
-flowchart LR
-    CASE["Frozen Cases"]
-    --> EVAL["Evaluation"]
-    --> FAIL["Failure Analysis"]
-    --> FIX["Engineering Change"]
-    --> REG["Regression Evaluation"]
-```
-
-This loop was used during development rather than relying only on successful manual demos.
-
-One important example was the 10-K fuel-expense case, where failure analysis revealed that the production registry still used baseline retrieval after an improved retriever had been developed.
-
-The resulting fix changed the production retrieval architecture.
+| Decision | Why |
+|---|---|
+| pandas for metrics | Exact, reproducible numbers; the model explains them and never computes them |
+| Local embeddings + FAISS | No per-query embedding cost; right-sized for 700 chunks; reproducible |
+| Two-stage retrieval | FAISS finds candidates cheaply; the cross-encoder orders the evidence |
+| Neighbour expansion, measured separately | Recovers evidence split across chunks without inflating ranked metrics |
+| LLM interaction router, keyword fallback | Intent needs understanding; the cheap, deterministic router still covers unmapped cases |
+| One `ToolSpec` per tool | One edit per tool change; generated schemas can't drift from the code |
+| Rewrite follow-ups, don't thread history | Every downstream component and eval keeps working on one self-contained question |
+| MCP opt-in | Shows the protocol boundary without charging every request a subprocess |
+| Thin API and frontend | Business logic stays in plain, testable Python |
 
 ---
 
-# 23. Software Testing Boundary
-
-pytest covers deterministic software contracts.
-
-Current regression status (October 2026):
-
-```text
-141 passed
-```
-
-Coverage includes areas such as:
-
-```text
-skill routing
-API schemas
-API behavior
-frontend serving
-reliability / retry
-action guards
-checkpointing
-observability
-```
-
-API tests mock `run_agent()`.
-
-This keeps routine regression:
-
-- fast;
-- deterministic;
-- inexpensive;
-- independent of model availability.
-
-The distinction is intentional:
-
-```text
-pytest
-→ Did a software contract break?
-
-AI evaluation
-→ Is model/retrieval/agent behavior still correct on the frozen cases?
-```
-
-Neither layer replaces the other.
-
----
-
-# 24. Failure-Driven Architecture
-
-A central design principle of the project is:
-
-> **Failures should produce architectural information.**
-
-The strongest example occurred during end-to-end evaluation:
-
-```text
-Knowledge Question
-       ↓
-Correct Skill
-       ↓
-Correct Tool
-       ↓
-Tool Executes
-       ↓
-Final Answer Fails
-```
-
-The initial trajectory looked healthy.
-
-Failure analysis showed:
-
-```text
-experimental improved retrieval existed
-              ↓
-production registry still used baseline retrieval
-```
-
-After integrating improved retrieval, a second problem appeared:
-
-```text
-CrossEncoder raw score
-        ↓
-external schema expected bounded score
-        ↓
-validation failure
-```
-
-The final architecture therefore keeps reranking logits internal while exposing a compatible bounded score through the external tool contract.
-
-This example demonstrates why agent architecture cannot be judged solely from whether a tool was called successfully.
-
----
-
-# 25. Repository Architecture
-
-The current package is organized by responsibility.
-
-```text
-src/
-└── agentic_bi/
-    ├── api/
-    │   ├── app.py
-    │   └── schemas.py
-    │
-    ├── core/
-    │   ├── action_guard.py
-    │   ├── agent.py
-    │   ├── checkpoint.py
-    │   ├── observability.py
-    │   ├── prompts.py
-    │   ├── reliability.py
-    │   ├── schemas.py
-    │   └── state.py
-    │
-    ├── data/
-    │   └── loader.py
-    │
-    ├── evaluation/
-    │
-    ├── frontend/
-    │   ├── index.html
-    │   ├── styles.css
-    │   └── app.js
-    │
-    ├── mcp/
-    │   ├── server.py
-    │   └── tools.py
-    │
-    ├── rag/
-    │
-    ├── skills/
-    │
-    └── tools/
-
-scripts/
-├── build_embedding_cache.py
-└── build_faiss_index.py
-
-evals/
-docs/
-tests/
-```
-
-Experimental demo scripts used during learning were removed from the final production package.
-
-Offline index-building utilities were moved into `scripts/`.
-
-This keeps the installable package focused on runtime capabilities.
-
----
-
-# 26. Design Principles
-
-## 1. Separate reasoning from computation
-
-The model decides and explains.
-
-Python calculates deterministic metrics.
-
-Retrieval infrastructure supplies evidence.
-
----
-
-## 2. Make state explicit
-
-Explicit state enables:
-
-```text
-limits
-debugging
-evaluation
-observability
-checkpointing
-```
-
----
-
-## 3. Keep interfaces thin
-
-FastAPI exposes the application.
-
-MCP exposes a capability.
-
-Neither should become the location of business logic.
-
----
-
-## 4. Validate boundaries
-
-Model-generated arguments, capability outputs, and external requests should cross typed contracts where practical.
-
----
-
-## 5. Bound autonomy
-
-Steps, tool calls, retries, repeated calls, and consequential actions have explicit controls.
-
----
-
-## 6. Evaluate components independently
-
-A correct route does not guarantee a correct tool.
-
-A correct tool does not guarantee good retrieval.
-
-Good retrieval does not guarantee a correct final answer.
-
-Each layer needs appropriate evaluation.
-
----
-
-## 7. Freeze evaluation before optimization
-
-Before/after comparisons are meaningful only when the cases remain stable.
-
----
-
-## 8. Do not inflate metrics
-
-Neighbor-expanded context improves evidence availability but is not treated as ranked retrieval.
-
----
-
-## 9. Use failures as engineering evidence
-
-Failures are classified and investigated rather than hidden behind successful demonstrations.
-
----
-
-## 10. Add infrastructure only when justified
-
-The project uses local embeddings and FAISS because they are appropriate for the current scale.
-
-Distributed infrastructure would add complexity without solving a current requirement.
-
----
-
-# 27. Current Scope vs. Production Platform
-
-The project demonstrates production-minded engineering patterns.
-
-It does **not** claim to be a production airline platform.
-
-The current scope does not include:
-
-- enterprise authentication or RBAC;
-- distributed task queues/workers;
-- production sandboxing;
-- horizontally distributed vector infrastructure;
-- broad arbitrary BI query synthesis;
-- real airline write actions;
-- sophisticated multi-agent orchestration;
-- large held-out evaluation datasets;
-- production monitoring-platform integration;
-- durable workflow-engine semantics;
-- full external model-conversation crash recovery.
-
-These are architectural extensions that should be introduced when a concrete requirement justifies them.
-
----
-
-# 28. Architectural Summary
-
-The complete system can be reduced to one principle:
-
-```text
-User Question
-      ↓
-Understand the Work
-      ↓
-Choose the Correct Capability
-      ↓
-Execute Through a Controlled Boundary
-      ↓
-Validate the Result
-      ↓
-Record What Happened
-      ↓
-Return a Grounded Answer
-      ↓
-Evaluate Whether the System Behaved Correctly
-```
-
-The architecture is therefore not centered on the LLM alone.
-
-It is centered on the interaction between:
-
-```text
-model
-tools
-state
-retrieval
-deterministic computation
-validation
-reliability
-safety
-observability
-evaluation
-interfaces
-```
-
-That combination turns a model call into an inspectable, bounded, and testable agentic business-information system.
+## 17. Boundaries
+
+- One month of flight data. Analyses are the fixed metrics and groupings the tools offer, not arbitrary queries.
+- Four documents. FAISS fits this scale; it is not distributed retrieval.
+- Evaluation sets are small and frozen; results are not production accuracy.
+- Checkpoints restore application state, not an interrupted model conversation.
+- The main workflow is read-only; the write path is a mock that demonstrates the guard.
+- Not affiliated with or endorsed by Delta Air Lines.

@@ -1,3 +1,10 @@
+> **Archive.** This is the original engineering log, kept unedited as a
+> record of how the project was built. It stops at about M14 (September
+> 2026). Its status lines, commands and file paths are out of date. For
+> the current system, see [`ARCHITECTURE.md`](ARCHITECTURE.md),
+> [`EVALUATION.md`](EVALUATION.md), [`DEVELOPMENT.md`](DEVELOPMENT.md)
+> and [`REFACTOR_JOURNEY.md`](REFACTOR_JOURNEY.md).
+
 # Agentic Business Intelligence --- Engineering Development Log
 
 **Project:** Delta Air Lines Agentic Business Intelligence\
