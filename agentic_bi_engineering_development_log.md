@@ -576,10 +576,7 @@ Distance
 A deterministic tool was built:
 
 ``` python
-analyze_top_origin_cancellation_rates(
-    min_flights,
-    top_n,
-)
+analyze_top_origin_cancellation_rates(min_flights, top_n)
 ```
 
 This uses pandas rather than asking the LLM to calculate statistics.
