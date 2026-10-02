@@ -20,6 +20,10 @@ from agentic_bi.config import (
     tool_transport,
 )
 from agentic_bi.core.schemas import (
+    DelayCausesArgs,
+    DelayCausesOutput,
+    FlightPerformanceArgs,
+    FlightPerformanceOutput,
     IssueCustomerCreditArgs,
     IssueCustomerCreditOutput,
     KnowledgeSearchArgs,
@@ -32,6 +36,10 @@ from agentic_bi.core.schemas import (
 from agentic_bi.mcp.tools import analyze_top_origin_cancellation_rates_via_mcp
 from agentic_bi.tools.delta_official_web import search_delta_official_web
 from agentic_bi.tools.flight_analysis import analyze_top_origin_cancellation_rates
+from agentic_bi.tools.flight_metrics import (
+    analyze_delay_causes,
+    rank_flight_performance,
+)
 from agentic_bi.tools.improved_knowledge_search import search_private_knowledge_improved
 from agentic_bi.tools.mock_actions import issue_customer_credit
 
@@ -163,6 +171,10 @@ class ToolSpec:
     # (starting with "\n   " when the description goes on the next lines).
     prompt_summary: str = ""
 
+    # What the tool does, for per-run counters: document search, dataset
+    # analysis, official web search, or a write action.
+    category: Literal["knowledge", "data", "web", "action"] = "data"
+
     access: Literal["read", "write"] = "read"
     requires_approval: bool = False
     max_attempts: int = 1
@@ -170,8 +182,9 @@ class ToolSpec:
     # Executions allowed per run; None means no per-tool limit.
     max_calls_per_run: int | None = None
 
-    # Skills that may be offered this tool; None means every skill.
-    skills: frozenset[str] | None = None
+    # Skills that may be offered this tool; None means every skill. A set
+    # may include None for runs where no skill was selected.
+    skills: frozenset[str | None] | None = None
 
     # False for actions that exist for the guard but are never offered.
     offered_to_model: bool = True
@@ -194,6 +207,8 @@ class ToolSpec:
 KNOWLEDGE_SEARCH_TOOL = "search_private_knowledge"
 DATA_ANALYSIS_TOOL = "analyze_top_origin_cancellation_rates"
 WEB_SEARCH_TOOL = "search_official_web"
+PERFORMANCE_TOOL = "rank_flight_performance"
+DELAY_CAUSES_TOOL = "analyze_delay_causes"
 
 
 _SPECS = [
@@ -204,6 +219,7 @@ _SPECS = [
             "reports, and other internal business knowledge."
         ),
         func=run_knowledge_search,
+        category="knowledge",
         input_model=KnowledgeSearchArgs,
         output_model=KnowledgeSearchOutput,
         prompt_summary=(
@@ -230,6 +246,48 @@ _SPECS = [
         max_calls_per_run=MAX_DATA_ANALYSIS_CALLS,
     ),
     ToolSpec(
+        name=PERFORMANCE_TOOL,
+        description=(
+            "Rank Delta-marketed July 2026 domestic flights grouped by origin, "
+            "destination, route, operating carrier, date or day of week, by "
+            "cancellation rate, on-time arrival rate, average arrival or "
+            "departure delay, diversion rate or flight count. Can filter by "
+            "origin/destination airport or compare specific groups. For origin "
+            "airports ranked by cancellation rate, use "
+            "analyze_top_origin_cancellation_rates instead."
+        ),
+        func=rank_flight_performance,
+        input_model=FlightPerformanceArgs,
+        output_model=FlightPerformanceOutput,
+        prompt_summary=(
+            "\n   Rank airports, routes, operating carriers, dates or weekdays by\n"
+            "   cancellation, on-time, delay or diversion metrics (deterministic\n"
+            "   pandas computation)."
+        ),
+        max_attempts=1,
+        max_calls_per_run=2,
+        skills=frozenset({"data-analysis", None}),
+    ),
+    ToolSpec(
+        name=DELAY_CAUSES_TOOL,
+        description=(
+            "Break down July 2026 Delta-marketed domestic flight delays by cause "
+            "(carrier, weather, national aviation system, security, late-arriving "
+            "aircraft) and cancellations by reason, optionally for one origin, "
+            "destination or operating carrier."
+        ),
+        func=analyze_delay_causes,
+        input_model=DelayCausesArgs,
+        output_model=DelayCausesOutput,
+        prompt_summary=(
+            "\n   Break down delay minutes and cancellations by cause, overall or for\n"
+            "   one airport or operating carrier (deterministic pandas computation)."
+        ),
+        max_attempts=1,
+        max_calls_per_run=2,
+        skills=frozenset({"data-analysis", None}),
+    ),
+    ToolSpec(
         name=WEB_SEARCH_TOOL,
         description=(
             "Search current official Delta and U.S. government websites "
@@ -239,6 +297,7 @@ _SPECS = [
             "user asks whether a document is still current."
         ),
         func=run_official_web_search,
+        category="web",
         input_model=OfficialWebSearchArgs,
         output_model=OfficialWebSearchOutput,
         prompt_summary=(
@@ -255,6 +314,7 @@ _SPECS = [
         name="issue_customer_credit",
         description="Issue a goodwill credit to a customer account (mock).",
         func=issue_customer_credit,
+        category="action",
         input_model=IssueCustomerCreditArgs,
         output_model=IssueCustomerCreditOutput,
         access="write",
@@ -278,11 +338,3 @@ def get_tools_for_skill(selected_skill: str | None) -> list[dict]:
     """OpenAI tool definitions offered to the model for a skill."""
 
     return [spec.openai_tool() for spec in get_tool_specs_for_skill(selected_skill)]
-
-
-def model_tool_specs(
-    registry: Mapping[str, ToolSpec] = TOOL_REGISTRY,
-) -> list[ToolSpec]:
-    """Every tool the model can be offered, for the prompt's capability list."""
-
-    return [spec for spec in registry.values() if spec.offered_to_model]

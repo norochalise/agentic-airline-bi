@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 # -------------------------------------------------------------------
 # Tool input schemas
@@ -210,3 +210,211 @@ class IssueCustomerCreditOutput(BaseModel):
     reason: str | None = None
 
     idempotency_key: str
+
+
+# -------------------------------------------------------------------
+# Flight-performance ranking
+# -------------------------------------------------------------------
+
+FlightMetric = Literal[
+    "cancellation_rate",
+    "on_time_arrival_rate",
+    "avg_arrival_delay_minutes",
+    "avg_departure_delay_minutes",
+    "diversion_rate",
+    "flight_count",
+]
+
+FlightGroupBy = Literal[
+    "origin", "destination", "route", "operating_carrier", "flight_date", "day_of_week"
+]
+
+# Group keys whose values are airport or carrier codes.
+_CODE_GROUPS = {"origin", "destination", "route", "operating_carrier"}
+
+
+def _upper_code(value: str | None) -> str | None:
+    return value.strip().upper() if value else None
+
+
+class FlightPerformanceArgs(BaseModel):
+    """
+    Validated arguments for ranking groups of flights by a metric.
+    """
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    metric: FlightMetric = Field(
+        description=(
+            "Metric to rank by. on_time_arrival_rate follows the DOT definition "
+            "(arrived under 15 minutes late; cancelled and diverted flights "
+            "count as not on time)."
+        )
+    )
+
+    group_by: FlightGroupBy = Field(
+        description=(
+            "What to compare: origin or destination airport, route "
+            "(ORIGIN-DEST), operating_carrier, flight_date or day_of_week."
+        )
+    )
+
+    order: Literal["highest", "lowest", "calendar"] = Field(
+        description=(
+            "highest or lowest metric first; calendar orders flight_date or "
+            "day_of_week chronologically."
+        )
+    )
+
+    top_n: int = Field(ge=1, le=50, description="Number of groups to return.")
+
+    min_flights: int = Field(
+        ge=1,
+        description=(
+            "Minimum scheduled flights for a group to be included. Use 1 unless "
+            "the user gives a threshold or small groups would distort a rate."
+        ),
+    )
+
+    origin: str | None = Field(
+        description="Only flights departing this IATA airport code; null for all."
+    )
+
+    destination: str | None = Field(
+        description="Only flights arriving at this IATA airport code; null for all."
+    )
+
+    only: list[str] | None = Field(
+        description=(
+            "Keep only these group values, to compare them directly (for "
+            "example ['JFK', 'LGA'], ['ATL-LGA'] or ['Monday']); null for all."
+        )
+    )
+
+    @field_validator("origin", "destination")
+    @classmethod
+    def _codes_upper(cls, value: str | None) -> str | None:
+        return _upper_code(value)
+
+    @model_validator(mode="after")
+    def _check_combination(self) -> "FlightPerformanceArgs":
+        if self.order == "calendar" and self.group_by not in (
+            "flight_date",
+            "day_of_week",
+        ):
+            raise ValueError(
+                "order='calendar' needs group_by flight_date or day_of_week"
+            )
+
+        if self.only and self.group_by in _CODE_GROUPS:
+            self.only = [value.strip().upper() for value in self.only]
+
+        return self
+
+
+class FlightPerformanceRow(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    group: str = Field(min_length=1)
+
+    flights: int = Field(ge=0)
+
+    value: float
+
+
+class FlightPerformanceOutput(BaseModel):
+    """
+    Validated output of the flight-performance ranking tool.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    dataset: str = Field(min_length=1)
+
+    metric: FlightMetric
+
+    unit: Literal["percent", "minutes", "flights"]
+
+    group_by: FlightGroupBy
+
+    order: Literal["highest", "lowest", "calendar"]
+
+    filters: dict[str, str | list[str] | None]
+
+    minimum_flights: int = Field(ge=1)
+
+    results: list[FlightPerformanceRow]
+
+
+# -------------------------------------------------------------------
+# Delay-cause breakdown
+# -------------------------------------------------------------------
+
+
+class DelayCausesArgs(BaseModel):
+    """
+    Validated arguments for the delay-cause breakdown.
+    """
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    origin: str | None = Field(
+        description="Only flights departing this IATA airport code; null for all."
+    )
+
+    destination: str | None = Field(
+        description="Only flights arriving at this IATA airport code; null for all."
+    )
+
+    operating_carrier: str | None = Field(
+        description=(
+            "Only flights operated by this carrier code (DL, OO, 9E, YX); null for all."
+        )
+    )
+
+    @field_validator("origin", "destination", "operating_carrier")
+    @classmethod
+    def _codes_upper(cls, value: str | None) -> str | None:
+        return _upper_code(value)
+
+
+class DelayCauseShare(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    cause: str
+
+    minutes: float = Field(ge=0)
+
+    share_percent: float = Field(ge=0, le=100)
+
+
+class CancellationReasonShare(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    reason: str
+
+    flights: int = Field(ge=0)
+
+    share_percent: float = Field(ge=0, le=100)
+
+
+class DelayCausesOutput(BaseModel):
+    """
+    Validated output of the delay-cause breakdown tool.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    dataset: str = Field(min_length=1)
+
+    filters: dict[str, str | None]
+
+    flights: int = Field(ge=0)
+
+    delayed_flights_with_causes: int = Field(ge=0)
+
+    delay_causes: list[DelayCauseShare]
+
+    cancelled_flights: int = Field(ge=0)
+
+    cancellation_reasons: list[CancellationReasonShare]

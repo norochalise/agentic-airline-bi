@@ -206,3 +206,60 @@ def test_invalid_arguments_go_back_to_the_model(data_run):
     tool_output = client.responses.requests[1]["input"][0]
     assert tool_output["call_id"] == "c1"
     assert "input_validation_error" in tool_output["output"]
+
+
+def test_analytics_tool_budget_then_forced_answer(monkeypatch, run_store):
+    calls = []
+
+    def fake_rank(**kwargs):
+        calls.append(kwargs)
+        return {
+            "dataset": "Delta-marketed domestic flights, July 2026",
+            "metric": kwargs["metric"],
+            "unit": "percent",
+            "group_by": kwargs["group_by"],
+            "order": kwargs["order"],
+            "filters": {"origin": None, "destination": None, "only": None},
+            "minimum_flights": 1,
+            "results": [{"group": "ATL", "flights": 100, "value": 80.0}],
+        }
+
+    monkeypatch.setattr(agent_module, "classify_interaction", routed_to("airline_data"))
+
+    def rank_call(metric, call_id):
+        return function_call(
+            "rank_flight_performance",
+            {
+                "metric": metric,
+                "group_by": "origin",
+                "order": "highest",
+                "top_n": 3,
+                "min_flights": 1,
+                "origin": None,
+                "destination": None,
+                "only": None,
+            },
+            call_id,
+        )
+
+    client = FakeClient(
+        [
+            model_response("r1", [rank_call("on_time_arrival_rate", "c1")]),
+            model_response("r2", [rank_call("cancellation_rate", "c2")]),
+            model_response("r3", output_text="ATL leads both."),
+        ]
+    )
+
+    result = agent_module.run_agent(
+        "Compare on-time and cancellation rates by airport",
+        client=client,
+        store=run_store,
+        tools=tools_with(rank_flight_performance=fake_rank),
+    )
+
+    assert len(calls) == 2
+    assert result.data_analysis_count == 2
+    assert result.final_answer == "ATL leads both."
+    # The second call used the tool's budget of 2, so the answer had no tools.
+    assert "tools" in client.responses.requests[1]
+    assert "tools" not in client.responses.requests[2]

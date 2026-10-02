@@ -44,7 +44,9 @@ from agentic_bi.skills.router import select_skill
 from agentic_bi.tools.delta_current_info import answer_current_delta_question
 from agentic_bi.tools.registry import (
     DATA_ANALYSIS_TOOL,
+    DELAY_CAUSES_TOOL,
     KNOWLEDGE_SEARCH_TOOL,
+    PERFORMANCE_TOOL,
     TOOL_REGISTRY,
     WEB_SEARCH_TOOL,
     ToolSpec,
@@ -60,7 +62,7 @@ INTENT_TO_SKILL = {
 # call is forced to write the final answer.
 FINAL_ANSWER_TRIGGERS = {
     "knowledge-analysis": (KNOWLEDGE_SEARCH_TOOL, WEB_SEARCH_TOOL),
-    "data-analysis": (DATA_ANALYSIS_TOOL,),
+    "data-analysis": (DATA_ANALYSIS_TOOL, PERFORMANCE_TOOL, DELAY_CAUSES_TOOL),
 }
 
 # Names used in stop reasons and guard events for per-tool budgets.
@@ -199,8 +201,9 @@ class AgentRun:
     verbose: bool = False
     intent: str | None = None
 
-    # Executions per tool name (attempts, including failures).
+    # Executions (including failures) per tool name and per tool category.
     counts: Counter[str] = field(default_factory=Counter)
+    category_counts: Counter[str] = field(default_factory=Counter)
     seen_calls: set[tuple[str, str]] = field(default_factory=set)
 
     def event(self, event_type: str, **data: Any) -> None:
@@ -304,6 +307,7 @@ def interaction_gate(run: AgentRun) -> AgentResult | None:
 
         run.state.stop_reason = "current_airline_info"
         run.counts[WEB_SEARCH_TOOL] += 1
+        run.category_counts["web"] += 1
 
         run.event(
             "current_airline_info_retrieved",
@@ -569,6 +573,7 @@ def handle_tool_call(
 
     state.tool_call_count += 1
     run.counts[spec.name] += 1
+    run.category_counts[spec.category] += 1
 
     run.log("Tool selected:", item.name)
     run.log("Validated arguments:", arguments)
@@ -687,9 +692,9 @@ def finish_run(
         stop_reason=state.stop_reason,
         step_count=state.step_count,
         tool_call_count=state.tool_call_count,
-        knowledge_search_count=run.counts[KNOWLEDGE_SEARCH_TOOL],
-        data_analysis_count=run.counts[DATA_ANALYSIS_TOOL],
-        web_search_count=run.counts[WEB_SEARCH_TOOL],
+        knowledge_search_count=run.category_counts["knowledge"],
+        data_analysis_count=run.category_counts["data"],
+        web_search_count=run.category_counts["web"],
         sources=sources,
         tool_history=list(state.tool_history),
         observations=list(state.observations),

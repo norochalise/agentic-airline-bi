@@ -33,6 +33,28 @@ Typical tasks include:
 9. Translate analytical results into concise business interpretation.
 10. Report important limitations of the available data.
 
+## Available Analyses
+
+- `analyze_top_origin_cancellation_rates`: origin airports ranked by
+  cancellation rate.
+- `rank_flight_performance`: any other ranking or comparison. It covers
+  origins, destinations, routes, operating carriers, dates and weekdays, and
+  the metrics cancellation rate, on-time arrival rate, average arrival or
+  departure delay, diversion rate and flight count. It can filter by origin
+  or destination airport, and `only` compares named groups directly.
+- `analyze_delay_causes`: why flights were late or cancelled, overall or for
+  one airport or operating carrier.
+
+Metric definitions follow the DOT Air Travel Consumer Report:
+
+- A flight is on time when it is completed and arrives less than 15 minutes
+  late; cancelled and diverted flights count as not on time.
+- Average delays use completed flights, with early arrivals counted as zero.
+- Delay causes are reported only for flights at least 15 minutes late.
+
+The dataset covers Delta-marketed flights. The operating carrier codes are
+DL (Delta mainline), OO (SkyWest), 9E (Endeavor Air) and YX (Republic).
+
 ## Analysis Principles
 
 - Numerical results must come from tools or deterministic code.

@@ -1,12 +1,12 @@
-from agentic_bi.tools.registry import model_tool_specs
+from agentic_bi.tools.registry import get_tool_specs_for_skill
 
 
-def _capability_list() -> str:
-    """Numbered capability list generated from the tool registry."""
+def _capability_list(selected_skill: str | None) -> str:
+    """Numbered list of the tools offered to this skill, from the registry."""
 
     return "\n\n".join(
         f"{number}. {spec.name}{spec.prompt_summary}"
-        for number, spec in enumerate(model_tool_specs(), start=1)
+        for number, spec in enumerate(get_tool_specs_for_skill(selected_skill), start=1)
     )
 
 
@@ -30,7 +30,7 @@ selected skill.
 
 Available capabilities:
 
-{_capability_list()}
+{_capability_list(selected_skill)}
 
 Choose tools based on the information required by the user's goal.
 

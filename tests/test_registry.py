@@ -23,7 +23,34 @@ def test_tools_offered_per_skill():
     assert names(get_tool_specs_for_skill("data-analysis")) == [
         "search_private_knowledge",
         "analyze_top_origin_cancellation_rates",
+        "rank_flight_performance",
+        "analyze_delay_causes",
     ]
+
+
+def test_analytics_tools_stay_out_of_the_document_skill():
+    offered = names(get_tool_specs_for_skill("knowledge-analysis"))
+
+    assert "rank_flight_performance" not in offered
+    assert "analyze_delay_causes" not in offered
+
+
+def test_nullable_arguments_stay_required_for_strict_mode():
+    tools = {tool["name"]: tool for tool in get_tools_for_skill("data-analysis")}
+    parameters = tools["rank_flight_performance"]["parameters"]
+
+    assert parameters["required"] == [
+        "metric",
+        "group_by",
+        "order",
+        "top_n",
+        "min_flights",
+        "origin",
+        "destination",
+        "only",
+    ]
+    assert {"type": "null"} in parameters["properties"]["origin"]["anyOf"]
+    assert parameters["properties"]["metric"]["enum"][0] == "cancellation_rate"
 
 
 def test_write_action_is_registered_but_never_offered():
@@ -81,6 +108,13 @@ def test_prompt_capability_list_comes_from_the_registry():
     assert "2. analyze_top_origin_cancellation_rates\n" in prompt
     assert "3. search_official_web (document questions only, when offered)" in prompt
     assert "issue_customer_credit" not in prompt
+
+
+def test_prompt_lists_only_the_tools_offered_to_the_skill():
+    data_prompt = build_agent_instructions("data-analysis", "")
+
+    assert "4. analyze_delay_causes" in data_prompt
+    assert ". search_official_web" not in data_prompt
 
 
 @pytest.fixture
