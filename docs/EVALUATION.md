@@ -942,3 +942,24 @@ no regression, pytest now 62/62):
 
 LLM-backed evaluations are non-deterministic; small run-to-run variation is
 possible and should be re-run before being treated as a regression.
+
+# 33. After the Refactor (Steps 1–5, 2026-10-02)
+
+Re-run after the tool registry, agent split, in-process data tool, API
+hardening and eval clean-up. Tool JSON and prompts were verified
+byte-identical to the originals before these paid runs.
+
+| Evaluation | Command | Result | vs §32 |
+|---|---|---|---|
+| pytest | `uv run pytest` | 141/141 | +89 tests |
+| Skill routing | `uv run abi-eval-routing` | 15/15 | = |
+| Interaction routing | `uv run abi-eval-interaction` | 15/15 | = |
+| Tool selection | `uv run abi-eval-tools` | 15/15 | = |
+| Tool arguments | `uv run abi-eval-arguments` | 7/7 | = |
+| End-to-end | `uv run abi-eval-e2e` | 8/8, 0 failure records | = |
+| Baseline retrieval | `uv run abi-eval-retrieval` | Hit@3 80%, MRR@5 0.650 | = |
+| Reranked retrieval | `uv run abi-eval-reranked` | Hit@3 90%, MRR@5 0.750, coverage 10/10 | = |
+
+Live smoke test through the API: greeting, data, document, current-info
+and out-of-scope questions each took the expected route with zero errors
+(data and document answers about 8 s each).

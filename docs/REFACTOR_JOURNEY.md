@@ -18,7 +18,7 @@ A short log of how the Airline Intelligence Assistant went from "broken after a 
 
 | | Before | Now |
 |---|---|---|
-| Tests | 52 (agent tests broken) | **115**, all passing |
+| Tests | 52 (agent tests broken) | **141**, all passing |
 | Python lines | 8,590 | ~6,500 |
 | `core/agent.py` | 1,021 lines, one ~840-line function | 789 lines in small functions |
 | Places one tool is defined | 7 | **1** (`ToolSpec`) |
@@ -142,6 +142,31 @@ A short log of how the Airline Intelligence Assistant went from "broken after a 
 
 **Lesson:** one definition per concept, everything else generated from it. And when you generate what the LLM sees, diff it against the old version before you trust it.
 
+## Step 5: Hardening and cleanup
+
+**API**
+- `/ask` used to turn any failure into a bare 500. It now returns `{detail, error_id}` and logs the traceback under the same ID; nothing internal reaches the browser. A missing setting returns 503.
+- Questions are capped at 2,000 characters, which bounds the cost of a single request.
+- **Startup warm-up:** about 13.5 s of model loading (FAISS + embeddings 7.5 s, reranker 5.1 s, flight data 0.9 s) now happens at server start instead of on the first user's question.
+- The CDN scripts are pinned with **Subresource Integrity** hashes, so the browser refuses a tampered file.
+
+**Evaluation**
+- The same loaders and metrics were copied in 8 eval scripts; they now live in `evaluation/common.py`.
+- **Two copies of the labels disagreed.** The retrieval labels were hard-coded in one eval and stored in a JSON file for another, and they differed on one chunk. Both chunks contained the answer and the metrics came out identical, so the frozen JSON file became the only source, unchanged.
+- Every eval got a short command (`uv run abi-eval-routing`, …), and the server one (`uv run abi-serve`).
+
+**Tests and cleanup**
+- New unit tests for the pandas analysis, chunking and ingestion (using a generated PDF with a blank page), and the eval metrics: **141 tests**.
+- Removed an unused brute-force retriever.
+
+**Environment and docs**
+- **A broken environment.** The `.venv` had been copied from another folder, so `uv run pytest` silently ran the *other* project's code. Rebuilding it failed halfway because a running dev server locked a faiss DLL. Lesson: stop processes before reinstalling on Windows.
+- The README went from 680 to 144 lines, all current.
+
+**Paid check (once, at the end of the step):** interaction 15/15, tool selection 15/15, arguments 7/7, end-to-end 8/8 with 0 failures, and five live questions each routed correctly. Every result matches the baseline recorded before the refactor.
+
+**Lesson:** keep running the free checks while working, and save the paid evals for one run at the end of a step. Because the generated prompts were proven identical first, that one paid run was a confirmation rather than a debugging session.
+
 ---
 
 ## How we verified without burning API money
@@ -155,7 +180,6 @@ A short log of how the Airline Intelligence Assistant went from "broken after a 
 
 ## What's next
 
-5. **Hardening:** API error handler, input length limit, model warm-up, SRI on CDN scripts, shared eval code, shorter README.
 6. **Richer analytics:** more data questions (delays, routes, on-time performance) and charts in the chat.
 7. **Conversation UX:** streamed answers and follow-up questions.
 8. **Ship it:** Docker, CI and a live demo.
