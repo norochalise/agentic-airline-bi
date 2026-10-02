@@ -1,48 +1,11 @@
 """Regression tests for the official-web fallback inside the agent loop."""
 
-import json
-from pathlib import Path
-from types import SimpleNamespace
+from functools import partial
 
 import pytest
 
-from agentic_bi.core.interaction import InteractionDecision
 from agentic_bi.tools.registry import get_tools_for_skill
-
-# -------------------------------------------------------------------
-# Fake model client
-# -------------------------------------------------------------------
-
-
-def function_call(name, arguments, call_id):
-    return SimpleNamespace(
-        type="function_call",
-        name=name,
-        arguments=json.dumps(arguments),
-        call_id=call_id,
-    )
-
-
-def model_response(response_id, output=None, output_text=""):
-    return SimpleNamespace(id=response_id, output=output or [], output_text=output_text)
-
-
-class FakeResponses:
-    """Return scripted responses and record every request."""
-
-    def __init__(self, scripted):
-        self.scripted = list(scripted)
-        self.requests = []
-
-    def create(self, **kwargs):
-        self.requests.append(kwargs)
-        return self.scripted.pop(0)
-
-
-class FakeClient:
-    def __init__(self, scripted):
-        self.responses = FakeResponses(scripted)
-
+from conftest import FakeClient, function_call, model_response, routed_to, tools_with
 
 PRIVATE_RESULT = {
     "query": "refund rules",
@@ -51,7 +14,9 @@ PRIVATE_RESULT = {
             "source": "delta_domestic_contract_plain_language_2026-08-18.pdf",
             "page_number": 15,
             "chunk_id": "contract:p15:c0",
+            "retrieval_type": "reranked",
             "score": 0.61,
+            "rerank_score": 4.2,
             "text": "Refunds are issued to the original form of payment.",
         }
     ],
@@ -70,8 +35,8 @@ WEB_RESULT = {
 
 
 @pytest.fixture
-def agent_env(monkeypatch, tmp_path: Path):
-    """Patch external dependencies of run_agent and return a setup helper."""
+def agent_env(monkeypatch, run_store):
+    """Fake tools and model; returns (agent module, call counts, setup)."""
 
     import agentic_bi.core.agent as agent_module
 
@@ -85,37 +50,27 @@ def agent_env(monkeypatch, tmp_path: Path):
         calls["web"] += 1
         return WEB_RESULT
 
-    monkeypatch.setitem(
-        agent_module.FUNCTIONS, "search_private_knowledge", fake_knowledge
+    tools = tools_with(
+        search_private_knowledge=fake_knowledge, search_official_web=fake_web
     )
-    monkeypatch.setitem(agent_module.FUNCTIONS, "search_official_web", fake_web)
-    monkeypatch.setattr(
-        agent_module, "save_checkpoint", lambda checkpoint: tmp_path / "checkpoint.json"
-    )
-    monkeypatch.setattr(
-        agent_module, "save_trace", lambda trace: tmp_path / "trace.json"
-    )
-    monkeypatch.setenv("OPENAI_MODEL", "test-model")
 
     def setup(skill, scripted):
+        """Script the model and return (fake client, ask function)."""
+
         client = FakeClient(scripted)
 
-        monkeypatch.setattr(agent_module, "OpenAI", lambda: client)
-        monkeypatch.setattr(
-            agent_module,
-            "classify_interaction",
-            lambda question, client=None: InteractionDecision(
-                intent=(
-                    "airline_knowledge"
-                    if skill == "knowledge-analysis"
-                    else "airline_data"
-                ),
-                reason="Test routing.",
-            ),
+        intent = (
+            "airline_knowledge" if skill == "knowledge-analysis" else "airline_data"
         )
+
+        monkeypatch.setattr(agent_module, "classify_interaction", routed_to(intent))
         monkeypatch.setattr(agent_module, "select_skill", lambda goal: skill)
 
-        return client
+        ask = partial(
+            agent_module.run_agent, client=client, store=run_store, tools=tools
+        )
+
+        return client, ask
 
     return agent_module, calls, setup
 
@@ -145,7 +100,7 @@ def test_only_knowledge_analysis_is_offered_web_search():
 def test_web_search_is_blocked_before_private_search(agent_env):
     agent_module, calls, setup = agent_env
 
-    setup(
+    _, ask = setup(
         "knowledge-analysis",
         [
             model_response(
@@ -156,7 +111,7 @@ def test_web_search_is_blocked_before_private_search(agent_env):
         ],
     )
 
-    result = agent_module.run_agent("What are the refund rules?")
+    result = ask("What are the refund rules?")
 
     assert calls["web"] == 0
     assert result.web_search_count == 0
@@ -170,7 +125,7 @@ def test_web_search_is_blocked_before_private_search(agent_env):
 def test_web_fallback_runs_after_private_search(agent_env):
     agent_module, calls, setup = agent_env
 
-    client = setup(
+    client, ask = setup(
         "knowledge-analysis",
         [
             model_response(
@@ -195,9 +150,7 @@ def test_web_fallback_runs_after_private_search(agent_env):
         ],
     )
 
-    result = agent_module.run_agent(
-        "Does the contract still describe refunds the same way today?"
-    )
+    result = ask("Does the contract still describe refunds the same way today?")
 
     assert calls == {"knowledge": 1, "web": 1}
     assert result.knowledge_search_count == 1
@@ -219,7 +172,7 @@ def test_web_fallback_runs_after_private_search(agent_env):
 def test_data_analysis_cannot_call_web_search(agent_env):
     agent_module, calls, setup = agent_env
 
-    client = setup(
+    client, ask = setup(
         "data-analysis",
         [
             model_response(
@@ -233,7 +186,7 @@ def test_data_analysis_cannot_call_web_search(agent_env):
         ],
     )
 
-    result = agent_module.run_agent("Which airport has the highest cancellation rate?")
+    result = ask("Which airport has the highest cancellation rate?")
 
     assert calls["web"] == 0
     assert result.stop_reason == "blocked_unknown_tool"
@@ -247,7 +200,7 @@ def test_interaction_intent_selects_skill_without_keyword_router(
 ):
     agent_module, calls, setup = agent_env
 
-    client = setup(
+    client, ask = setup(
         "knowledge-analysis",
         [model_response("r1", output_text="Not found in the documents.")],
     )
@@ -258,7 +211,7 @@ def test_interaction_intent_selects_skill_without_keyword_router(
     monkeypatch.setattr(agent_module, "select_skill", fail_if_keyword_router_runs)
 
     # No routing keywords: the old keyword router returned None here.
-    result = agent_module.run_agent("when delta company found")
+    result = ask("when delta company found")
 
     assert result.selected_skill == "knowledge-analysis"
     assert "search_official_web" in tool_names(client.responses.requests[0]["tools"])

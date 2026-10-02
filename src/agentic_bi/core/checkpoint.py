@@ -1,10 +1,9 @@
-import json
-from dataclasses import dataclass
-from datetime import UTC, datetime
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
 from agentic_bi.config import CHECKPOINTS_DIR
+from agentic_bi.core.persistence import read_json, utc_now_iso, write_json
 from agentic_bi.core.state import AgentState
 
 DEFAULT_CHECKPOINT_DIR = CHECKPOINTS_DIR
@@ -22,14 +21,6 @@ class AgentCheckpoint:
     state: dict[str, Any]
 
 
-def utc_now_iso() -> str:
-    """
-    Return the current UTC time as an ISO-8601 string.
-    """
-
-    return datetime.now(UTC).isoformat()
-
-
 def create_checkpoint(
     run_id: str, checkpoint_id: str, state: AgentState
 ) -> AgentCheckpoint:
@@ -45,19 +36,6 @@ def create_checkpoint(
     )
 
 
-def checkpoint_to_dict(checkpoint: AgentCheckpoint) -> dict[str, Any]:
-    """
-    Convert an AgentCheckpoint into a JSON-serializable dictionary.
-    """
-
-    return {
-        "run_id": checkpoint.run_id,
-        "checkpoint_id": checkpoint.checkpoint_id,
-        "created_at": checkpoint.created_at,
-        "state": checkpoint.state,
-    }
-
-
 def save_checkpoint(
     checkpoint: AgentCheckpoint, checkpoint_dir: Path | None = None
 ) -> Path:
@@ -69,22 +47,10 @@ def save_checkpoint(
 
     root_dir = checkpoint_dir if checkpoint_dir is not None else DEFAULT_CHECKPOINT_DIR
 
-    run_dir = root_dir / checkpoint.run_id
-
-    run_dir.mkdir(parents=True, exist_ok=True)
-
-    checkpoint_path = run_dir / f"{checkpoint.checkpoint_id}.json"
-
-    with checkpoint_path.open("w", encoding="utf-8") as file:
-        json.dump(
-            checkpoint_to_dict(checkpoint),
-            file,
-            indent=2,
-            ensure_ascii=False,
-            default=str,
-        )
-
-    return checkpoint_path
+    return write_json(
+        root_dir / checkpoint.run_id / f"{checkpoint.checkpoint_id}.json",
+        asdict(checkpoint),
+    )
 
 
 def load_checkpoint(checkpoint_path: Path) -> AgentCheckpoint:
@@ -92,15 +58,7 @@ def load_checkpoint(checkpoint_path: Path) -> AgentCheckpoint:
     Load a previously persisted checkpoint.
     """
 
-    with checkpoint_path.open("r", encoding="utf-8") as file:
-        data = json.load(file)
-
-    return AgentCheckpoint(
-        run_id=data["run_id"],
-        checkpoint_id=data["checkpoint_id"],
-        created_at=data["created_at"],
-        state=data["state"],
-    )
+    return AgentCheckpoint(**read_json(checkpoint_path))
 
 
 def restore_agent_state(checkpoint: AgentCheckpoint) -> AgentState:
@@ -111,15 +69,4 @@ def restore_agent_state(checkpoint: AgentCheckpoint) -> AgentState:
     automatically restore an external model/API conversation.
     """
 
-    state_data = checkpoint.state
-
-    return AgentState(
-        goal=state_data["goal"],
-        step_count=state_data.get("step_count", 0),
-        tool_call_count=state_data.get("tool_call_count", 0),
-        selected_skill=state_data.get("selected_skill"),
-        stop_reason=state_data.get("stop_reason"),
-        tool_history=state_data.get("tool_history", []),
-        observations=state_data.get("observations", []),
-        errors=state_data.get("errors", []),
-    )
+    return AgentState(**checkpoint.state)

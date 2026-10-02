@@ -1,5 +1,27 @@
-from agentic_bi.config import RETRIEVAL_CANDIDATE_K, RETRIEVAL_TOP_K
+"""The single definition of every tool the agent can use.
+
+Each tool is one `ToolSpec`. The OpenAI tool JSON, input and output
+validation, retry policy, access policy, per-run budget and the prompt's
+capability list are all derived from it.
+"""
+
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass
+from typing import Any, Literal
+
+from pydantic import BaseModel
+
+from agentic_bi.config import (
+    MAX_DATA_ANALYSIS_CALLS,
+    MAX_KNOWLEDGE_SEARCHES,
+    MAX_WEB_SEARCHES,
+    RETRIEVAL_CANDIDATE_K,
+    RETRIEVAL_TOP_K,
+    tool_transport,
+)
 from agentic_bi.core.schemas import (
+    IssueCustomerCreditArgs,
+    IssueCustomerCreditOutput,
     KnowledgeSearchArgs,
     KnowledgeSearchOutput,
     OfficialWebSearchArgs,
@@ -9,7 +31,9 @@ from agentic_bi.core.schemas import (
 )
 from agentic_bi.mcp.tools import analyze_top_origin_cancellation_rates_via_mcp
 from agentic_bi.tools.delta_official_web import search_delta_official_web
+from agentic_bi.tools.flight_analysis import analyze_top_origin_cancellation_rates
 from agentic_bi.tools.improved_knowledge_search import search_private_knowledge_improved
+from agentic_bi.tools.mock_actions import issue_customer_credit
 
 # -------------------------------------------------------------------
 # Tool implementations / adapters
@@ -20,52 +44,45 @@ def run_knowledge_search(query: str) -> dict:
     """
     Retrieve evidence from the local Delta knowledge base.
 
-    Internally uses the improved M14 retrieval pipeline:
-
-        FAISS candidate retrieval
-            -> CrossEncoder reranking
-            -> neighboring-chunk expansion
-
-    The returned structure intentionally preserves the original
-    knowledge-search tool contract expected by the agent.
+    Pipeline: FAISS candidates -> CrossEncoder reranking -> neighbouring
+    chunks. Each result says how it was retrieved, so the model can tell
+    primary evidence ("reranked") from surrounding context ("neighbor_*").
     """
 
     improved_result = search_private_knowledge_improved(
         query=query, candidate_k=RETRIEVAL_CANDIDATE_K, top_k=RETRIEVAL_TOP_K
     )
 
-    # ---------------------------------------------------------------
-    # ADAPTER
-    #
-    # improved retriever:
-    #     query
-    #     reranked_results
-    #     context_results
-    #
-    # agent tool contract:
-    #     query
-    #     results
-    #
-    # We give the agent the expanded context while keeping the
-    # existing external schema unchanged.
-    # ---------------------------------------------------------------
-
-    results = []
-
-    for item in improved_result["context_results"]:
-        results.append(
-            {
-                "source": item["source"],
-                "page_number": item["page_number"],
-                "chunk_id": item["chunk_id"],
-                "score": (
-                    item["faiss_score"] if item["faiss_score"] is not None else 0.0
-                ),
-                "text": item["text"],
-            }
-        )
+    results = [
+        {
+            "source": item["source"],
+            "page_number": item["page_number"],
+            "chunk_id": item["chunk_id"],
+            "retrieval_type": item["retrieval_type"],
+            "score": item["faiss_score"],
+            "rerank_score": item["rerank_score"],
+            "text": item["text"],
+        }
+        for item in improved_result["context_results"]
+    ]
 
     return {"query": query, "results": results}
+
+
+def run_origin_cancellation_analysis(min_flights: int, top_n: int) -> dict:
+    """
+    Rank origin airports by cancellation rate.
+
+    Runs in this process by default. TOOL_TRANSPORT=mcp routes the call
+    through the MCP server instead (one subprocess per call).
+    """
+
+    if tool_transport() == "mcp":
+        return analyze_top_origin_cancellation_rates_via_mcp(
+            min_flights=min_flights, top_n=top_n
+        )
+
+    return analyze_top_origin_cancellation_rates(min_flights=min_flights, top_n=top_n)
 
 
 def run_official_web_search(query: str) -> dict:
@@ -93,153 +110,179 @@ def run_official_web_search(query: str) -> dict:
 
 
 # -------------------------------------------------------------------
-# Tool definitions exposed to the model
+# Tool specification
 # -------------------------------------------------------------------
 
+# Validation keywords left out of the model-facing schema. Pydantic
+# still enforces them when the arguments come back.
+_MODEL_SCHEMA_EXCLUDED_KEYS = {
+    "title",
+    "default",
+    "minLength",
+    "maxLength",
+    "minimum",
+    "maximum",
+    "exclusiveMinimum",
+    "exclusiveMaximum",
+}
 
-TOOLS = [
-    {
-        "type": "function",
-        "name": "search_private_knowledge",
-        "description": (
+
+def _strict_parameters(model: type[BaseModel]) -> dict[str, Any]:
+    """OpenAI strict-mode parameter schema for a pydantic input model."""
+
+    schema = model.model_json_schema()
+
+    properties = {
+        name: {
+            key: value
+            for key, value in field_schema.items()
+            if key not in _MODEL_SCHEMA_EXCLUDED_KEYS
+        }
+        for name, field_schema in schema["properties"].items()
+    }
+
+    return {
+        "type": "object",
+        "properties": properties,
+        "required": list(properties),
+        "additionalProperties": False,
+    }
+
+
+@dataclass(frozen=True)
+class ToolSpec:
+    """Everything the agent needs to know about one tool."""
+
+    name: str
+    description: str
+    func: Callable[..., dict]
+    input_model: type[BaseModel]
+    output_model: type[BaseModel]
+
+    # Capability entry for the agent prompt: the text after the tool name
+    # (starting with "\n   " when the description goes on the next lines).
+    prompt_summary: str = ""
+
+    access: Literal["read", "write"] = "read"
+    requires_approval: bool = False
+    max_attempts: int = 1
+
+    # Executions allowed per run; None means no per-tool limit.
+    max_calls_per_run: int | None = None
+
+    # Skills that may be offered this tool; None means every skill.
+    skills: frozenset[str] | None = None
+
+    # False for actions that exist for the guard but are never offered.
+    offered_to_model: bool = True
+
+    def openai_tool(self) -> dict[str, Any]:
+        """The function definition sent to the Responses API."""
+
+        return {
+            "type": "function",
+            "name": self.name,
+            "description": self.description,
+            "parameters": _strict_parameters(self.input_model),
+            "strict": True,
+        }
+
+    def is_offered_to(self, skill: str | None) -> bool:
+        return self.offered_to_model and (self.skills is None or skill in self.skills)
+
+
+KNOWLEDGE_SEARCH_TOOL = "search_private_knowledge"
+DATA_ANALYSIS_TOOL = "analyze_top_origin_cancellation_rates"
+WEB_SEARCH_TOOL = "search_official_web"
+
+
+_SPECS = [
+    ToolSpec(
+        name=KNOWLEDGE_SEARCH_TOOL,
+        description=(
             "Search indexed Delta documents, policies, contracts, "
             "reports, and other internal business knowledge."
         ),
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "query": {
-                    "type": "string",
-                    "description": (
-                        "Focused semantic retrieval query describing "
-                        "the evidence required."
-                    ),
-                }
-            },
-            "required": ["query"],
-            "additionalProperties": False,
-        },
-        "strict": True,
-    },
-    {
-        "type": "function",
-        "name": "analyze_top_origin_cancellation_rates",
-        "description": (
+        func=run_knowledge_search,
+        input_model=KnowledgeSearchArgs,
+        output_model=KnowledgeSearchOutput,
+        prompt_summary=(
+            "\n   Search indexed Delta documents, policies, contracts, reports, and\n"
+            "   internal business knowledge using local semantic retrieval."
+        ),
+        max_attempts=1,
+        max_calls_per_run=MAX_KNOWLEDGE_SEARCHES,
+    ),
+    ToolSpec(
+        name=DATA_ANALYSIS_TOOL,
+        description=(
             "Analyze July 2026 Delta-marketed domestic flight data "
             "and rank origin airports by cancellation rate."
         ),
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "min_flights": {
-                    "type": "integer",
-                    "description": (
-                        "Minimum number of flights required for an "
-                        "airport to be included in the analysis."
-                    ),
-                },
-                "top_n": {
-                    "type": "integer",
-                    "description": (
-                        "Number of highest cancellation-rate airports to return."
-                    ),
-                },
-            },
-            "required": ["min_flights", "top_n"],
-            "additionalProperties": False,
-        },
-        "strict": True,
-    },
-    {
-        "type": "function",
-        "name": "search_official_web",
-        "description": (
+        func=run_origin_cancellation_analysis,
+        input_model=OriginCancellationAnalysisArgs,
+        output_model=OriginCancellationAnalysisOutput,
+        prompt_summary=(
+            "\n   Analyze cancellation rates from the July 2026 Delta-marketed\n"
+            "   domestic flight dataset using deterministic pandas computation."
+        ),
+        max_attempts=2,
+        max_calls_per_run=MAX_DATA_ANALYSIS_CALLS,
+    ),
+    ToolSpec(
+        name=WEB_SEARCH_TOOL,
+        description=(
             "Search current official Delta and U.S. government websites "
             "(delta.com, transportation.gov, faa.gov, bts.gov). Use only "
             "after search_private_knowledge when the private documents "
             "do not cover a material part of the question, or when the "
             "user asks whether a document is still current."
         ),
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "query": {
-                    "type": "string",
-                    "description": (
-                        "Focused plain-language query describing the "
-                        "official information required."
-                    ),
-                }
-            },
-            "required": ["query"],
-            "additionalProperties": False,
-        },
-        "strict": True,
-    },
+        func=run_official_web_search,
+        input_model=OfficialWebSearchArgs,
+        output_model=OfficialWebSearchOutput,
+        prompt_summary=(
+            " (document questions only, when offered)\n"
+            "   Search current official Delta and U.S. government websites\n"
+            "   (delta.com, transportation.gov, faa.gov, bts.gov)."
+        ),
+        max_attempts=2,
+        max_calls_per_run=MAX_WEB_SEARCHES,
+        # Dataset metrics must come from deterministic tools only.
+        skills=frozenset({"knowledge-analysis"}),
+    ),
+    ToolSpec(
+        name="issue_customer_credit",
+        description="Issue a goodwill credit to a customer account (mock).",
+        func=issue_customer_credit,
+        input_model=IssueCustomerCreditArgs,
+        output_model=IssueCustomerCreditOutput,
+        access="write",
+        requires_approval=True,
+        offered_to_model=False,
+    ),
 ]
 
+TOOL_REGISTRY: Mapping[str, ToolSpec] = {spec.name: spec for spec in _SPECS}
 
-# Tools that may never be offered to a structured-data workflow.
-WEB_TOOL_NAMES = {"search_official_web"}
+
+def get_tool_specs_for_skill(
+    selected_skill: str | None, registry: Mapping[str, ToolSpec] = TOOL_REGISTRY
+) -> list[ToolSpec]:
+    """Tools offered to the model for a skill, in registry order."""
+
+    return [spec for spec in registry.values() if spec.is_offered_to(selected_skill)]
 
 
 def get_tools_for_skill(selected_skill: str | None) -> list[dict]:
-    """
-    Return the tool definitions offered to the model for a skill.
+    """OpenAI tool definitions offered to the model for a skill."""
 
-    Only knowledge-analysis may fall back to official web search.
-    Dataset metrics must come from deterministic tools only.
-    """
-
-    if selected_skill == "knowledge-analysis":
-        return TOOLS
-
-    return [tool for tool in TOOLS if tool["name"] not in WEB_TOOL_NAMES]
+    return [spec.openai_tool() for spec in get_tool_specs_for_skill(selected_skill)]
 
 
-# -------------------------------------------------------------------
-# Runtime function registry
-# -------------------------------------------------------------------
+def model_tool_specs(
+    registry: Mapping[str, ToolSpec] = TOOL_REGISTRY,
+) -> list[ToolSpec]:
+    """Every tool the model can be offered, for the prompt's capability list."""
 
-
-FUNCTIONS = {
-    "search_private_knowledge": run_knowledge_search,
-    "analyze_top_origin_cancellation_rates": analyze_top_origin_cancellation_rates_via_mcp,  # noqa: E501
-    "search_official_web": run_official_web_search,
-}
-
-
-# -------------------------------------------------------------------
-# Input validation
-# -------------------------------------------------------------------
-
-
-INPUT_SCHEMAS = {
-    "search_private_knowledge": KnowledgeSearchArgs,
-    "analyze_top_origin_cancellation_rates": OriginCancellationAnalysisArgs,
-    "search_official_web": OfficialWebSearchArgs,
-}
-
-
-# -------------------------------------------------------------------
-# Output validation
-# -------------------------------------------------------------------
-
-
-OUTPUT_SCHEMAS = {
-    "search_private_knowledge": KnowledgeSearchOutput,
-    "analyze_top_origin_cancellation_rates": OriginCancellationAnalysisOutput,
-    "search_official_web": OfficialWebSearchOutput,
-}
-
-
-# -------------------------------------------------------------------
-# Reliability policies
-# -------------------------------------------------------------------
-
-
-TOOL_POLICIES = {
-    "search_private_knowledge": {"max_attempts": 1},
-    "analyze_top_origin_cancellation_rates": {"max_attempts": 2},
-    "search_official_web": {"max_attempts": 2},
-}
+    return [spec for spec in registry.values() if spec.offered_to_model]

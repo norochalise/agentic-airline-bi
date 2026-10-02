@@ -1,19 +1,28 @@
+"""Bounded, tool-using BI agent for one user question.
+
+run_agent() is a short pipeline:
+
+    interaction_gate   classify the question; answer early exits directly
+    choose_skill       map the intent (or keywords) to a skill
+    run_tool_loop      model <-> tools, under budgets and guards
+    finish_run         final checkpoint, trace and AgentResult
+
+Each tool call goes through handle_tool_call (guards) and execute_tool
+(access policy -> retry -> output validation).
+"""
+
 import json
+from collections import Counter
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
-from openai import OpenAI
 from pydantic import ValidationError
 
-from agentic_bi.config import (
-    MAX_DATA_ANALYSIS_CALLS,
-    MAX_KNOWLEDGE_SEARCHES,
-    MAX_STEPS,
-    MAX_TOOL_CALLS,
-    MAX_WEB_SEARCHES,
-    openai_model,
-)
-from agentic_bi.core.checkpoint import create_checkpoint, save_checkpoint
+from agentic_bi.config import MAX_STEPS, MAX_TOOL_CALLS, openai_model
+from agentic_bi.core.action_guard import enforce_action_policy
+from agentic_bi.core.checkpoint import create_checkpoint
+from agentic_bi.core.clients import get_openai_client
 from agentic_bi.core.interaction import classify_interaction
 from agentic_bi.core.interaction_response import build_interaction_response
 from agentic_bi.core.observability import (
@@ -22,31 +31,46 @@ from agentic_bi.core.observability import (
     add_event,
     create_trace,
     finish_trace,
-    save_trace,
 )
 from agentic_bi.core.prompts import (
     build_agent_instructions,
     build_final_answer_instructions,
 )
 from agentic_bi.core.reliability import execute_with_retry
+from agentic_bi.core.run_store import RunStore, default_run_store
 from agentic_bi.core.state import AgentState
 from agentic_bi.skills.loader import load_skill
 from agentic_bi.skills.router import select_skill
 from agentic_bi.tools.delta_current_info import answer_current_delta_question
 from agentic_bi.tools.registry import (
-    FUNCTIONS,
-    INPUT_SCHEMAS,
-    OUTPUT_SCHEMAS,
-    TOOL_POLICIES,
-    get_tools_for_skill,
+    DATA_ANALYSIS_TOOL,
+    KNOWLEDGE_SEARCH_TOOL,
+    TOOL_REGISTRY,
+    WEB_SEARCH_TOOL,
+    ToolSpec,
+    get_tool_specs_for_skill,
 )
-
-WEB_SEARCH_TOOL = "search_official_web"
 
 INTENT_TO_SKILL = {
     "airline_knowledge": "knowledge-analysis",
     "airline_data": "data-analysis",
 }
+
+# When one of these tools has used its per-run budget, the next model
+# call is forced to write the final answer.
+FINAL_ANSWER_TRIGGERS = {
+    "knowledge-analysis": (KNOWLEDGE_SEARCH_TOOL, WEB_SEARCH_TOOL),
+    "data-analysis": (DATA_ANALYSIS_TOOL,),
+}
+
+# Names used in stop reasons and guard events for per-tool budgets.
+BUDGET_LABELS = {
+    KNOWLEDGE_SEARCH_TOOL: "knowledge_search",
+    DATA_ANALYSIS_TOOL: "data_analysis",
+    WEB_SEARCH_TOOL: "web_search",
+}
+
+DATASET_TITLE = "Delta-marketed domestic flight data — July 2026"
 
 
 @dataclass
@@ -73,817 +97,309 @@ class AgentResult:
     trace: AgentTrace | None = None
 
 
-def _collect_sources(
-    selected_skill: str | None, observations: list[dict[str, Any]]
-) -> list[dict[str, Any]]:
+# -------------------------------------------------------------------
+# Tool execution
+# -------------------------------------------------------------------
+
+
+class ToolCallError(Exception):
+    """A tool call failed; the model is told why and may correct itself."""
+
+    def __init__(
+        self,
+        error_type: str,
+        message: str,
+        *,
+        details: Any = None,
+        error: str | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.error_type = error_type
+        self.message = message
+        self.details = details
+        self.error = error
+
+    def model_output(self) -> str:
+        """JSON returned to the model as the tool output."""
+
+        payload = {
+            "status": "error",
+            "error_type": self.error_type,
+            "message": self.message,
+        }
+
+        if self.details is not None:
+            payload["details"] = self.details
+
+        return json.dumps(payload)
+
+
+def parse_arguments(spec: ToolSpec, raw_arguments: str) -> dict[str, Any]:
+    """Parse the model's JSON arguments and validate them against the spec."""
+
+    try:
+        arguments = json.loads(raw_arguments)
+    except json.JSONDecodeError as exc:
+        raise ToolCallError(
+            "argument_parse_error",
+            "Tool arguments were not valid JSON.",
+            error=str(exc),
+        ) from exc
+
+    try:
+        return spec.input_model.model_validate(arguments).model_dump()
+    except ValidationError as exc:
+        raise ToolCallError(
+            "input_validation_error",
+            "Tool arguments failed validation.",
+            details=json.loads(exc.json()),
+        ) from exc
+
+
+def execute_tool(
+    spec: ToolSpec, arguments: dict[str, Any], *, approved: bool = False
+) -> dict[str, Any]:
     """
-    Collect user-facing provenance from successful observations.
+    Run one validated tool call: access policy, retries, output validation.
 
-    Knowledge-analysis runs expose retrieved document/page
-    references. Data-analysis runs expose the dataset used
-    for deterministic computation.
+    Raises ToolCallError when the output breaks the tool's contract; any
+    other exception is a tool execution failure.
     """
 
-    sources: list[dict[str, Any]] = []
+    enforce_action_policy(spec.name, approved=approved, registry={spec.name: spec})
 
-    if selected_skill == "knowledge-analysis":
-        seen: set[tuple[str, Any]] = set()
+    raw_result = execute_with_retry(
+        spec.func, max_attempts=spec.max_attempts, **arguments
+    )
 
-        for observation in observations:
-            if observation.get("tool") != "search_private_knowledge":
-                continue
+    try:
+        return spec.output_model.model_validate(raw_result).model_dump()
+    except ValidationError as exc:
+        raise ToolCallError(
+            "output_validation_error",
+            "Tool output failed validation.",
+            details=json.loads(exc.json()),
+        ) from exc
 
-            result = observation.get("result", {})
 
-            if not isinstance(result, dict):
-                continue
+# -------------------------------------------------------------------
+# Run context
+# -------------------------------------------------------------------
 
-            evidence_items = result.get("results", [])
 
-            if not isinstance(evidence_items, list):
-                continue
+@dataclass
+class AgentRun:
+    """Everything one run_agent() call works with."""
 
-            for evidence in evidence_items:
-                if not isinstance(evidence, dict):
-                    continue
+    state: AgentState
+    trace: AgentTrace
+    client: Any
+    store: RunStore
+    tools: Mapping[str, ToolSpec]
+    verbose: bool = False
+    intent: str | None = None
 
-                source_name = evidence.get("source")
+    # Executions per tool name (attempts, including failures).
+    counts: Counter[str] = field(default_factory=Counter)
+    seen_calls: set[tuple[str, str]] = field(default_factory=set)
 
-                page_number = evidence.get("page_number")
+    def event(self, event_type: str, **data: Any) -> None:
+        add_event(self.trace, event_type, **data)
 
-                if not source_name:
-                    continue
+    def log(self, *values: Any) -> None:
+        if self.verbose:
+            print(*values)
 
-                key = (str(source_name), page_number)
-
-                if key in seen:
-                    continue
-
-                seen.add(key)
-
-                sources.append(
-                    {
-                        "source_type": "private_document",
-                        "title": str(source_name),
-                        "page_number": page_number,
-                        "url": None,
-                    }
-                )
-
-    if selected_skill == "knowledge-analysis":
-        seen_urls: set[str] = set()
-
-        for observation in observations:
-            if observation.get("tool") != WEB_SEARCH_TOOL:
-                continue
-
-            result = observation.get("result", {})
-
-            if not isinstance(result, dict):
-                continue
-
-            for page in result.get("results", []):
-                if not isinstance(page, dict):
-                    continue
-
-                url = page.get("url")
-
-                if not url or url in seen_urls:
-                    continue
-
-                seen_urls.add(url)
-
-                sources.append(
-                    {
-                        "source_type": "live_official_web",
-                        "title": str(page.get("title") or url),
-                        "page_number": None,
-                        "url": url,
-                    }
-                )
-
-    elif selected_skill == "data-analysis":
-        sources.append(
-            {
-                "source_type": "dataset",
-                "title": ("Delta-marketed domestic flight data — July 2026"),
-                "page_number": None,
-                "url": None,
-            }
+    def checkpoint(self, checkpoint_id: str) -> None:
+        checkpoint = create_checkpoint(
+            run_id=self.trace.run_id, checkpoint_id=checkpoint_id, state=self.state
         )
 
-    return sources
+        path = self.store.save_checkpoint(checkpoint)
+
+        self.event(
+            "checkpoint_saved",
+            checkpoint_id=checkpoint_id,
+            path=str(path) if path else None,
+            step=self.state.step_count,
+        )
+
+    def record_error(self, error_info: dict[str, Any], *, history: bool) -> None:
+        self.state.errors.append(error_info)
+
+        if history:
+            self.state.tool_history.append(error_info)
+
+    def stop(self, stop_reason: str, **guard_data: Any) -> None:
+        """End the run because a controller guard fired."""
+
+        self.state.stop_reason = stop_reason
+
+        self.event("guard_triggered", **guard_data, step=self.state.step_count)
 
 
-def run_agent(question: str, verbose: bool = False) -> AgentResult:
+# -------------------------------------------------------------------
+# Pipeline stages
+# -------------------------------------------------------------------
+
+
+def run_agent(
+    question: str,
+    verbose: bool = False,
+    *,
+    client: Any = None,
+    store: RunStore | None = None,
+    tools: Mapping[str, ToolSpec] | None = None,
+) -> AgentResult:
     """
     Run the Agentic BI application for one user question.
 
-    Returns structured execution information so the same
-    agent can be reused by demos, evaluation, tests, APIs,
-    and observability tooling.
+    `client`, `store` and `tools` default to the shared OpenAI client,
+    on-disk run storage and the tool registry; tests pass fakes.
     """
 
-    client = OpenAI()
-
-    # ---------------------------------------------------------------
-    # Observability trace
-    # ---------------------------------------------------------------
-
-    trace = create_trace(question=question)
-
-    add_event(trace, "agent_started")
-
-    # ---------------------------------------------------------------
-    # Agent state
-    # ---------------------------------------------------------------
-
-    state = AgentState(goal=question)
-
-    # ---------------------------------------------------------------
-    # Interaction routing
-    # ---------------------------------------------------------------
-
-    interaction = classify_interaction(state.goal, client=client)
-
-    add_event(
-        trace,
-        "interaction_classified",
-        intent=interaction.intent,
-        reason=interaction.reason,
+    run = AgentRun(
+        state=AgentState(goal=question),
+        trace=create_trace(question=question),
+        client=client if client is not None else get_openai_client(),
+        store=store if store is not None else default_run_store(),
+        tools=tools if tools is not None else TOOL_REGISTRY,
+        verbose=verbose,
     )
 
-    if verbose:
-        print("Interaction intent:", interaction.intent)
+    run.event("agent_started")
 
-    interaction_response = build_interaction_response(
-        intent=interaction.intent, question=state.goal
+    early_result = interaction_gate(run)
+
+    if early_result is not None:
+        return early_result
+
+    choose_skill(run)
+
+    final_answer = run_tool_loop(run)
+
+    return finish_run(run, final_answer)
+
+
+def interaction_gate(run: AgentRun) -> AgentResult | None:
+    """
+    Classify the question and finish runs that need no tool loop.
+
+    Returns the result for greetings, app questions, out-of-scope
+    requests and current-information questions; None otherwise.
+    """
+
+    interaction = classify_interaction(run.state.goal, client=run.client)
+
+    run.intent = interaction.intent
+
+    run.event(
+        "interaction_classified", intent=interaction.intent, reason=interaction.reason
     )
 
-    # ---------------------------------------------------------------
-    # Current official-web information
-    # ---------------------------------------------------------------
+    run.log("Interaction intent:", interaction.intent)
 
     if interaction.intent == "current_airline_info":
-        current_info = answer_current_delta_question(state.goal)
+        current_info = answer_current_delta_question(run.state.goal, client=run.client)
 
-        state.stop_reason = "current_airline_info"
+        run.state.stop_reason = "current_airline_info"
+        run.counts[WEB_SEARCH_TOOL] += 1
 
-        add_event(
-            trace,
+        run.event(
             "current_airline_info_retrieved",
             source_type=current_info.get("source_type"),
             provider=current_info.get("provider"),
             source_count=len(current_info.get("sources", [])),
         )
 
-        final_checkpoint = create_checkpoint(
-            run_id=trace.run_id, checkpoint_id="final", state=state
+        return finish_run(
+            run, current_info["answer"], sources=list(current_info.get("sources", []))
         )
 
-        final_checkpoint_path = save_checkpoint(final_checkpoint)
-
-        add_event(
-            trace,
-            "checkpoint_saved",
-            checkpoint_id="final",
-            path=str(final_checkpoint_path),
-            step=state.step_count,
-        )
-
-        add_event(
-            trace,
-            "agent_finished",
-            stop_reason=state.stop_reason,
-            step_count=state.step_count,
-            tool_call_count=state.tool_call_count,
-            error_count=len(state.errors),
-        )
-
-        finish_trace(trace, stop_reason=state.stop_reason)
-
-        save_trace(trace)
-
-        return AgentResult(
-            goal=state.goal,
-            selected_skill=None,
-            final_answer=current_info["answer"],
-            stop_reason=state.stop_reason,
-            step_count=state.step_count,
-            tool_call_count=state.tool_call_count,
-            knowledge_search_count=0,
-            data_analysis_count=0,
-            web_search_count=1,
-            sources=list(current_info.get("sources", [])),
-            tool_history=list(state.tool_history),
-            observations=list(state.observations),
-            errors=list(state.errors),
-            trace=trace,
-        )
-
-    # ---------------------------------------------------------------
-    # Bounded interaction responses
-    # ---------------------------------------------------------------
+    interaction_response = build_interaction_response(
+        intent=interaction.intent, question=run.state.goal
+    )
 
     if interaction_response is not None:
-        state.stop_reason = "interaction_response"
+        run.state.stop_reason = "interaction_response"
 
-        add_event(trace, "interaction_handled", intent=interaction.intent)
+        run.event("interaction_handled", intent=interaction.intent)
 
-        final_checkpoint = create_checkpoint(
-            run_id=trace.run_id, checkpoint_id="final", state=state
-        )
+        return finish_run(run, interaction_response)
 
-        final_checkpoint_path = save_checkpoint(final_checkpoint)
+    return None
 
-        add_event(
-            trace,
-            "checkpoint_saved",
-            checkpoint_id="final",
-            path=str(final_checkpoint_path),
-            step=state.step_count,
-        )
 
-        add_event(
-            trace,
-            "agent_finished",
-            stop_reason=state.stop_reason,
-            step_count=state.step_count,
-            tool_call_count=state.tool_call_count,
-            error_count=len(state.errors),
-        )
+def choose_skill(run: AgentRun) -> None:
+    """
+    Pick the skill for the tool loop.
 
-        finish_trace(trace, stop_reason=state.stop_reason)
+    The interaction router already decided data vs. documents; the
+    keyword router is only a fallback for unmapped intents.
+    """
 
-        save_trace(trace)
-
-        return AgentResult(
-            goal=state.goal,
-            selected_skill=None,
-            final_answer=interaction_response,
-            stop_reason=state.stop_reason,
-            step_count=state.step_count,
-            tool_call_count=state.tool_call_count,
-            knowledge_search_count=0,
-            data_analysis_count=0,
-            tool_history=list(state.tool_history),
-            observations=list(state.observations),
-            errors=list(state.errors),
-            trace=trace,
-        )
-
-    # ---------------------------------------------------------------
-    # Skill selection
-    # ---------------------------------------------------------------
-
-    # The interaction router already decided data vs. documents.
-    # The keyword router is only a fallback for unmapped intents.
-    state.selected_skill = INTENT_TO_SKILL.get(interaction.intent)
+    run.state.selected_skill = INTENT_TO_SKILL.get(run.intent)
 
     skill_source = "interaction_router"
 
-    if state.selected_skill is None:
-        state.selected_skill = select_skill(state.goal)
+    if run.state.selected_skill is None:
+        run.state.selected_skill = select_skill(run.state.goal)
 
         skill_source = "keyword_router"
 
-    add_event(trace, "skill_selected", skill=state.selected_skill, source=skill_source)
+    run.event("skill_selected", skill=run.state.selected_skill, source=skill_source)
 
-    skill_content = ""
+    run.log("Selected skill:", run.state.selected_skill)
 
-    if state.selected_skill is not None:
-        skill_content = load_skill(state.selected_skill)
 
-    if verbose:
-        print("Selected skill:", state.selected_skill)
+def run_tool_loop(run: AgentRun) -> str:
+    """
+    Alternate model calls and tool calls until the model answers or a
+    budget or guard stops the run. Returns the final answer text.
+    """
 
-    # ---------------------------------------------------------------
-    # Instructions
-    # ---------------------------------------------------------------
+    state = run.state
+
+    skill_content = load_skill(state.selected_skill) if state.selected_skill else ""
 
     instructions = build_agent_instructions(
         selected_skill=state.selected_skill, skill_content=skill_content
     )
 
-    # ---------------------------------------------------------------
-    # Runtime guards
-    # ---------------------------------------------------------------
-
-    seen_tool_calls = set()
-
-    knowledge_search_count = 0
-    data_analysis_count = 0
-    web_search_count = 0
-
     # Web search is offered only to knowledge-analysis.
-    tools = get_tools_for_skill(state.selected_skill)
+    specs = get_tool_specs_for_skill(state.selected_skill, run.tools)
+    tools = [spec.openai_tool() for spec in specs]
+    allowed_tool_names = {spec.name for spec in specs}
 
-    allowed_tool_names = {tool["name"] for tool in tools}
-
-    # ---------------------------------------------------------------
-    # Initial model decision
-    # ---------------------------------------------------------------
-
-    response = client.responses.create(
+    response = run.client.responses.create(
         model=openai_model(), input=state.goal, instructions=instructions, tools=tools
     )
-
-    # ---------------------------------------------------------------
-    # Bounded agent loop
-    # ---------------------------------------------------------------
 
     while state.step_count < MAX_STEPS:
         state.step_count += 1
 
-        if verbose:
-            print(f"\n--- Agent step {state.step_count} ---")
+        run.log(f"\n--- Agent step {state.step_count} ---")
 
         function_calls = [
             item for item in response.output if item.type == "function_call"
         ]
 
-        # -----------------------------------------------------------
-        # Normal completion
-        # -----------------------------------------------------------
-
         if not function_calls:
             state.stop_reason = "final_answer"
             break
 
+        # Web fallback requires private evidence from an earlier step.
+        knowledge_searches_before_step = run.counts[KNOWLEDGE_SEARCH_TOOL]
+
         tool_outputs = []
 
-        # Web fallback requires private evidence from an earlier step.
-        knowledge_searches_before_step = knowledge_search_count
-
-        # -----------------------------------------------------------
-        # Process tool calls
-        # -----------------------------------------------------------
-
         for item in function_calls:
-            # -------------------------------------------------------
-            # Global tool budget
-            # -------------------------------------------------------
-
-            if state.tool_call_count >= MAX_TOOL_CALLS:
-                state.stop_reason = "tool_call_budget_exceeded"
-
-                add_event(
-                    trace,
-                    "guard_triggered",
-                    guard="tool_call_budget",
-                    step=state.step_count,
-                )
-
-                break
-
-            # -------------------------------------------------------
-            # Tool allowlist
-            # -------------------------------------------------------
-
-            if item.name not in FUNCTIONS or item.name not in allowed_tool_names:
-                state.stop_reason = "blocked_unknown_tool"
-
-                error_info = {
-                    "tool": item.name,
-                    "error_type": "unknown_tool",
-                    "error": "Unknown tool requested",
-                }
-
-                state.errors.append(error_info)
-
-                add_event(
-                    trace,
-                    "guard_triggered",
-                    guard="unknown_tool",
-                    tool=item.name,
-                    step=state.step_count,
-                )
-
-                break
-
-            # -------------------------------------------------------
-            # Parse arguments
-            # -------------------------------------------------------
-
-            try:
-                arguments = json.loads(item.arguments)
-
-            except json.JSONDecodeError as exc:
-                error_info = {
-                    "tool": item.name,
-                    "error_type": "argument_parse_error",
-                    "error": str(exc),
-                }
-
-                state.errors.append(error_info)
-
-                state.tool_history.append(error_info)
-
-                add_event(
-                    trace,
-                    "tool_validation_failed",
-                    tool=item.name,
-                    stage="argument_parsing",
-                    step=state.step_count,
-                    error=str(exc),
-                )
-
-                tool_outputs.append(
-                    {
-                        "type": "function_call_output",
-                        "call_id": item.call_id,
-                        "output": json.dumps(
-                            {
-                                "status": "error",
-                                "error_type": "argument_parse_error",
-                                "message": "Tool arguments were not valid JSON.",
-                            }
-                        ),
-                    }
-                )
-
-                continue
-
-            # -------------------------------------------------------
-            # Validate input
-            # -------------------------------------------------------
-
-            try:
-                validated_input = INPUT_SCHEMAS[item.name].model_validate(arguments)
-
-                arguments = validated_input.model_dump()
-
-            except ValidationError as exc:
-                validation_details = json.loads(exc.json())
-
-                error_info = {
-                    "tool": item.name,
-                    "arguments": arguments,
-                    "error_type": "input_validation_error",
-                    "details": validation_details,
-                }
-
-                state.errors.append(error_info)
-
-                state.tool_history.append(error_info)
-
-                add_event(
-                    trace,
-                    "tool_validation_failed",
-                    tool=item.name,
-                    stage="input_validation",
-                    step=state.step_count,
-                    details=validation_details,
-                )
-
-                if verbose:
-                    print("Input validation failed:", item.name)
-
-                tool_outputs.append(
-                    {
-                        "type": "function_call_output",
-                        "call_id": item.call_id,
-                        "output": json.dumps(
-                            {
-                                "status": "error",
-                                "error_type": "input_validation_error",
-                                "message": "Tool arguments failed validation.",
-                                "details": validation_details,
-                            }
-                        ),
-                    }
-                )
-
-                continue
-
-            # -------------------------------------------------------
-            # Duplicate-call guard
-            # -------------------------------------------------------
-
-            call_signature = (item.name, json.dumps(arguments, sort_keys=True))
-
-            if call_signature in seen_tool_calls:
-                state.stop_reason = "repeated_tool_call"
-
-                error_info = {
-                    "tool": item.name,
-                    "arguments": arguments,
-                    "error_type": "repeated_tool_call",
-                    "error": "Repeated identical tool call",
-                }
-
-                state.errors.append(error_info)
-
-                add_event(
-                    trace,
-                    "guard_triggered",
-                    guard="repeated_tool_call",
-                    tool=item.name,
-                    arguments=arguments,
-                    step=state.step_count,
-                )
-
-                break
-
-            # -------------------------------------------------------
-            # Web fallback: private documents first
-            # -------------------------------------------------------
-
-            if item.name == WEB_SEARCH_TOOL and knowledge_searches_before_step == 0:
-                error_info = {
-                    "tool": item.name,
-                    "arguments": arguments,
-                    "error_type": "web_before_private_search",
-                    "error": (
-                        "Official web search is only allowed after "
-                        "private knowledge has been searched."
-                    ),
-                }
-
-                state.errors.append(error_info)
-
-                state.tool_history.append(error_info)
-
-                add_event(
-                    trace,
-                    "guard_triggered",
-                    guard="web_before_private_search",
-                    tool=item.name,
-                    step=state.step_count,
-                )
-
-                tool_outputs.append(
-                    {
-                        "type": "function_call_output",
-                        "call_id": item.call_id,
-                        "output": json.dumps(
-                            {
-                                "status": "error",
-                                "error_type": "web_before_private_search",
-                                "message": (
-                                    "Search the private knowledge "
-                                    "base first. Use official web "
-                                    "search only if that evidence "
-                                    "is insufficient."
-                                ),
-                            }
-                        ),
-                    }
-                )
-
-                continue
-
-            # -------------------------------------------------------
-            # Per-tool budgets
-            # -------------------------------------------------------
-
-            if item.name == WEB_SEARCH_TOOL and web_search_count >= MAX_WEB_SEARCHES:
-                state.stop_reason = "web_search_budget_exceeded"
-
-                add_event(
-                    trace,
-                    "guard_triggered",
-                    guard="web_search_budget",
-                    tool=item.name,
-                    step=state.step_count,
-                )
-
-                break
-
-            if (
-                item.name == "search_private_knowledge"
-                and knowledge_search_count >= MAX_KNOWLEDGE_SEARCHES
-            ):
-                state.stop_reason = "knowledge_search_budget_exceeded"
-
-                add_event(
-                    trace,
-                    "guard_triggered",
-                    guard="knowledge_search_budget",
-                    tool=item.name,
-                    step=state.step_count,
-                )
-
-                break
-
-            if (
-                item.name == "analyze_top_origin_cancellation_rates"
-                and data_analysis_count >= MAX_DATA_ANALYSIS_CALLS
-            ):
-                state.stop_reason = "data_analysis_budget_exceeded"
-
-                add_event(
-                    trace,
-                    "guard_triggered",
-                    guard="data_analysis_budget",
-                    tool=item.name,
-                    step=state.step_count,
-                )
-
-                break
-
-            seen_tool_calls.add(call_signature)
-
-            # -------------------------------------------------------
-            # Record execution attempt
-            # -------------------------------------------------------
-
-            state.tool_call_count += 1
-
-            if item.name == "search_private_knowledge":
-                knowledge_search_count += 1
-
-            elif item.name == "analyze_top_origin_cancellation_rates":
-                data_analysis_count += 1
-
-            elif item.name == WEB_SEARCH_TOOL:
-                web_search_count += 1
-
-            if verbose:
-                print("Tool selected:", item.name)
-
-                print("Validated arguments:", arguments)
-
-            # -------------------------------------------------------
-            # Execute tool
-            # -------------------------------------------------------
-
-            tool_timer = ExecutionTimer()
-            tool_timer.start()
-
-            add_event(
-                trace,
-                "tool_started",
-                tool=item.name,
-                arguments=arguments,
-                step=state.step_count,
+            output = handle_tool_call(
+                run, item, allowed_tool_names, knowledge_searches_before_step
             )
 
-            try:
-                policy = TOOL_POLICIES[item.name]
-
-                raw_result = execute_with_retry(
-                    FUNCTIONS[item.name],
-                    max_attempts=policy["max_attempts"],
-                    **arguments,
-                )
-
-                # ---------------------------------------------------
-                # Validate output
-                # ---------------------------------------------------
-
-                try:
-                    validated_output = OUTPUT_SCHEMAS[item.name].model_validate(
-                        raw_result
-                    )
-
-                    result = validated_output.model_dump()
-
-                    if verbose:
-                        print("Output validated:", item.name)
-
-                except ValidationError as exc:
-                    tool_duration = tool_timer.stop()
-
-                    validation_details = json.loads(exc.json())
-
-                    error_info = {
-                        "tool": item.name,
-                        "arguments": arguments,
-                        "error_type": "output_validation_error",
-                        "details": validation_details,
-                    }
-
-                    state.errors.append(error_info)
-
-                    state.tool_history.append(error_info)
-
-                    add_event(
-                        trace,
-                        "tool_completed",
-                        tool=item.name,
-                        step=state.step_count,
-                        duration_seconds=tool_duration,
-                        status="error",
-                        error_type="output_validation_error",
-                    )
-
-                    if verbose:
-                        print("Output validation failed:", item.name)
-
-                    tool_outputs.append(
-                        {
-                            "type": "function_call_output",
-                            "call_id": item.call_id,
-                            "output": json.dumps(
-                                {
-                                    "status": "error",
-                                    "error_type": "output_validation_error",
-                                    "message": "Tool output failed validation.",
-                                    "details": validation_details,
-                                }
-                            ),
-                        }
-                    )
-
-                    continue
-
-                # ---------------------------------------------------
-                # Successful observation
-                # ---------------------------------------------------
-
-                tool_duration = tool_timer.stop()
-
-                add_event(
-                    trace,
-                    "tool_completed",
-                    tool=item.name,
-                    step=state.step_count,
-                    duration_seconds=tool_duration,
-                    status="success",
-                )
-
-                observation = {
-                    "tool": item.name,
-                    "arguments": arguments,
-                    "result": result,
-                }
-
-                state.observations.append(observation)
-
-                state.tool_history.append(observation)
-
-                # ---------------------------------------------------
-                # Persist step checkpoint
-                # ---------------------------------------------------
-
-                checkpoint = create_checkpoint(
-                    run_id=trace.run_id,
-                    checkpoint_id=(
-                        f"step_{state.step_count}_tool_{state.tool_call_count}"
-                    ),
-                    state=state,
-                )
-
-                checkpoint_path = save_checkpoint(checkpoint)
-
-                add_event(
-                    trace,
-                    "checkpoint_saved",
-                    checkpoint_id=checkpoint.checkpoint_id,
-                    path=str(checkpoint_path),
-                    step=state.step_count,
-                )
-
-                if verbose:
-                    if item.name == "search_private_knowledge":
-                        print("Evidence retrieved:", len(result["results"]))
-
-                    elif item.name == "analyze_top_origin_cancellation_rates":
-                        print("Rows returned:", len(result["results"]))
-
-                output = json.dumps(result, ensure_ascii=False, default=str)
-
-            # -------------------------------------------------------
-            # Tool execution failure
-            # -------------------------------------------------------
-
-            except Exception as exc:
-                tool_duration = tool_timer.stop()
-
-                error_info = {
-                    "tool": item.name,
-                    "arguments": arguments,
-                    "error_type": "tool_execution_error",
-                    "error": str(exc),
-                }
-
-                state.errors.append(error_info)
-
-                state.tool_history.append(error_info)
-
-                add_event(
-                    trace,
-                    "tool_completed",
-                    tool=item.name,
-                    step=state.step_count,
-                    duration_seconds=tool_duration,
-                    status="error",
-                    error_type="tool_execution_error",
-                    error=str(exc),
-                )
-
-                output = json.dumps(
-                    {
-                        "status": "error",
-                        "error_type": "tool_execution_error",
-                        "message": str(exc),
-                    }
-                )
-
-            # -------------------------------------------------------
-            # Return observation to model
-            # -------------------------------------------------------
+            if output is None:
+                break
 
             tool_outputs.append(
                 {
@@ -893,51 +409,21 @@ def run_agent(question: str, verbose: bool = False) -> AgentResult:
                 }
             )
 
-        # -----------------------------------------------------------
-        # Controller-level stop
-        # -----------------------------------------------------------
-
         if state.stop_reason is not None:
             break
 
-        # -----------------------------------------------------------
-        # Determine whether to force final synthesis
-        # -----------------------------------------------------------
-
-        force_final_answer = (
-            state.selected_skill == "knowledge-analysis"
-            and (
-                knowledge_search_count >= MAX_KNOWLEDGE_SEARCHES
-                or web_search_count >= MAX_WEB_SEARCHES
-            )
-        ) or (
-            state.selected_skill == "data-analysis"
-            and data_analysis_count >= MAX_DATA_ANALYSIS_CALLS
-        )
-
-        # -----------------------------------------------------------
-        # Force final answer
-        # -----------------------------------------------------------
-
-        if force_final_answer:
-            final_instructions = build_final_answer_instructions(instructions)
-
-            response = client.responses.create(
+        if must_answer_now(run):
+            response = run.client.responses.create(
                 model=openai_model(),
                 previous_response_id=response.id,
                 input=tool_outputs,
-                instructions=final_instructions,
+                instructions=build_final_answer_instructions(instructions),
             )
 
             state.stop_reason = "final_answer"
-
             break
 
-        # -----------------------------------------------------------
-        # Continue agent reasoning
-        # -----------------------------------------------------------
-
-        response = client.responses.create(
+        response = run.client.responses.create(
             model=openai_model(),
             previous_response_id=response.id,
             input=tool_outputs,
@@ -945,42 +431,238 @@ def run_agent(question: str, verbose: bool = False) -> AgentResult:
             tools=tools,
         )
 
-    # ---------------------------------------------------------------
-    # Termination
-    # ---------------------------------------------------------------
-
     if state.stop_reason is None:
         state.stop_reason = "max_steps_reached"
 
-    final_answer = ""
+    return response.output_text if state.stop_reason == "final_answer" else ""
 
-    if state.stop_reason == "final_answer":
-        final_answer = response.output_text
 
-    # ---------------------------------------------------------------
-    # Persist final state checkpoint
-    # ---------------------------------------------------------------
+def must_answer_now(run: AgentRun) -> bool:
+    """True when a tool that ends this skill's research is out of budget."""
 
-    final_checkpoint = create_checkpoint(
-        run_id=trace.run_id, checkpoint_id="final", state=state
+    for tool_name in FINAL_ANSWER_TRIGGERS.get(run.state.selected_skill, ()):
+        spec = run.tools.get(tool_name)
+
+        if spec is None or spec.max_calls_per_run is None:
+            continue
+
+        if run.counts[tool_name] >= spec.max_calls_per_run:
+            return True
+
+    return False
+
+
+def handle_tool_call(
+    run: AgentRun,
+    item: Any,
+    allowed_tool_names: set[str],
+    knowledge_searches_before_step: int,
+) -> str | None:
+    """
+    Apply the controller guards to one model tool call and run it.
+
+    Returns the tool output for the model, or None when a guard stopped
+    the run (state.stop_reason is then set).
+    """
+
+    state = run.state
+
+    if state.tool_call_count >= MAX_TOOL_CALLS:
+        run.stop("tool_call_budget_exceeded", guard="tool_call_budget")
+        return None
+
+    spec = run.tools.get(item.name)
+
+    if spec is None or item.name not in allowed_tool_names:
+        run.record_error(
+            {
+                "tool": item.name,
+                "error_type": "unknown_tool",
+                "error": "Unknown tool requested",
+            },
+            history=False,
+        )
+        run.stop("blocked_unknown_tool", guard="unknown_tool", tool=item.name)
+        return None
+
+    try:
+        arguments = parse_arguments(spec, item.arguments)
+    except ToolCallError as exc:
+        run.record_error(
+            {
+                "tool": item.name,
+                "error_type": exc.error_type,
+                "error": exc.error,
+                "details": exc.details,
+            },
+            history=True,
+        )
+        run.event(
+            "tool_validation_failed",
+            tool=item.name,
+            stage=(
+                "argument_parsing"
+                if exc.error_type == "argument_parse_error"
+                else "input_validation"
+            ),
+            step=state.step_count,
+            error=exc.error,
+            details=exc.details,
+        )
+        run.log("Input validation failed:", item.name)
+        return exc.model_output()
+
+    call_signature = (item.name, json.dumps(arguments, sort_keys=True))
+
+    if call_signature in run.seen_calls:
+        run.record_error(
+            {
+                "tool": item.name,
+                "arguments": arguments,
+                "error_type": "repeated_tool_call",
+                "error": "Repeated identical tool call",
+            },
+            history=False,
+        )
+        run.stop(
+            "repeated_tool_call",
+            guard="repeated_tool_call",
+            tool=item.name,
+            arguments=arguments,
+        )
+        return None
+
+    if item.name == WEB_SEARCH_TOOL and knowledge_searches_before_step == 0:
+        run.record_error(
+            {
+                "tool": item.name,
+                "arguments": arguments,
+                "error_type": "web_before_private_search",
+                "error": (
+                    "Official web search is only allowed after "
+                    "private knowledge has been searched."
+                ),
+            },
+            history=True,
+        )
+        run.event(
+            "guard_triggered",
+            guard="web_before_private_search",
+            tool=item.name,
+            step=state.step_count,
+        )
+        return ToolCallError(
+            "web_before_private_search",
+            "Search the private knowledge base first. Use official web "
+            "search only if that evidence is insufficient.",
+        ).model_output()
+
+    if (
+        spec.max_calls_per_run is not None
+        and run.counts[spec.name] >= spec.max_calls_per_run
+    ):
+        label = BUDGET_LABELS.get(spec.name, spec.name)
+        run.stop(f"{label}_budget_exceeded", guard=f"{label}_budget", tool=item.name)
+        return None
+
+    run.seen_calls.add(call_signature)
+
+    state.tool_call_count += 1
+    run.counts[spec.name] += 1
+
+    run.log("Tool selected:", item.name)
+    run.log("Validated arguments:", arguments)
+
+    return run_tool(run, spec, arguments)
+
+
+def run_tool(run: AgentRun, spec: ToolSpec, arguments: dict[str, Any]) -> str:
+    """Execute a tool that passed every guard and record the outcome."""
+
+    state = run.state
+
+    timer = ExecutionTimer()
+    timer.start()
+
+    run.event(
+        "tool_started", tool=spec.name, arguments=arguments, step=state.step_count
     )
 
-    final_checkpoint_path = save_checkpoint(final_checkpoint)
+    try:
+        result = execute_tool(spec, arguments)
 
-    add_event(
-        trace,
-        "checkpoint_saved",
-        checkpoint_id="final",
-        path=str(final_checkpoint_path),
+    except ToolCallError as exc:
+        run.record_error(
+            {
+                "tool": spec.name,
+                "arguments": arguments,
+                "error_type": exc.error_type,
+                "details": exc.details,
+            },
+            history=True,
+        )
+        run.event(
+            "tool_completed",
+            tool=spec.name,
+            step=state.step_count,
+            duration_seconds=timer.stop(),
+            status="error",
+            error_type=exc.error_type,
+        )
+        run.log("Output validation failed:", spec.name)
+        return exc.model_output()
+
+    except Exception as exc:
+        run.record_error(
+            {
+                "tool": spec.name,
+                "arguments": arguments,
+                "error_type": "tool_execution_error",
+                "error": str(exc),
+            },
+            history=True,
+        )
+        run.event(
+            "tool_completed",
+            tool=spec.name,
+            step=state.step_count,
+            duration_seconds=timer.stop(),
+            status="error",
+            error_type="tool_execution_error",
+            error=str(exc),
+        )
+        return ToolCallError("tool_execution_error", str(exc)).model_output()
+
+    run.event(
+        "tool_completed",
+        tool=spec.name,
         step=state.step_count,
+        duration_seconds=timer.stop(),
+        status="success",
     )
 
-    # ---------------------------------------------------------------
-    # Finish observability trace
-    # ---------------------------------------------------------------
+    observation = {"tool": spec.name, "arguments": arguments, "result": result}
 
-    add_event(
-        trace,
+    state.observations.append(observation)
+    state.tool_history.append(observation)
+
+    run.checkpoint(f"step_{state.step_count}_tool_{state.tool_call_count}")
+
+    run.log("Results returned:", len(result.get("results", [])))
+
+    return json.dumps(result, ensure_ascii=False, default=str)
+
+
+def finish_run(
+    run: AgentRun, final_answer: str, *, sources: list[dict[str, Any]] | None = None
+) -> AgentResult:
+    """Save the final checkpoint and trace, and build the result."""
+
+    state = run.state
+
+    run.checkpoint("final")
+
+    run.event(
         "agent_finished",
         stop_reason=state.stop_reason,
         step_count=state.step_count,
@@ -988,20 +670,15 @@ def run_agent(question: str, verbose: bool = False) -> AgentResult:
         error_count=len(state.errors),
     )
 
-    finish_trace(trace, stop_reason=state.stop_reason)
+    finish_trace(run.trace, stop_reason=state.stop_reason)
 
-    trace_path = save_trace(trace)
+    trace_path = run.store.save_trace(run.trace)
 
-    if verbose:
-        print("Trace saved:", trace_path)
+    if trace_path is not None:
+        run.log("Trace saved:", trace_path)
 
-    # ---------------------------------------------------------------
-    # Structured result
-    # ---------------------------------------------------------------
-
-    sources = _collect_sources(
-        selected_skill=state.selected_skill, observations=state.observations
-    )
+    if sources is None:
+        sources = collect_sources(state.selected_skill, state.observations)
 
     return AgentResult(
         goal=state.goal,
@@ -1010,12 +687,103 @@ def run_agent(question: str, verbose: bool = False) -> AgentResult:
         stop_reason=state.stop_reason,
         step_count=state.step_count,
         tool_call_count=state.tool_call_count,
-        knowledge_search_count=knowledge_search_count,
-        data_analysis_count=data_analysis_count,
-        web_search_count=web_search_count,
+        knowledge_search_count=run.counts[KNOWLEDGE_SEARCH_TOOL],
+        data_analysis_count=run.counts[DATA_ANALYSIS_TOOL],
+        web_search_count=run.counts[WEB_SEARCH_TOOL],
         sources=sources,
         tool_history=list(state.tool_history),
         observations=list(state.observations),
         errors=list(state.errors),
-        trace=trace,
+        trace=run.trace,
     )
+
+
+# -------------------------------------------------------------------
+# Sources
+# -------------------------------------------------------------------
+
+
+def _results_of(observation: dict[str, Any]) -> list[dict[str, Any]]:
+    result = observation.get("result")
+
+    if not isinstance(result, dict):
+        return []
+
+    items = result.get("results")
+
+    if not isinstance(items, list):
+        return []
+
+    return [item for item in items if isinstance(item, dict)]
+
+
+def collect_sources(
+    selected_skill: str | None, observations: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """
+    Collect user-facing provenance from successful observations.
+
+    Knowledge-analysis runs list each document page, then each official
+    web page. Data-analysis runs list the dataset used for computation.
+    """
+
+    if selected_skill == "data-analysis":
+        return [
+            {
+                "source_type": "dataset",
+                "title": DATASET_TITLE,
+                "page_number": None,
+                "url": None,
+            }
+        ]
+
+    if selected_skill != "knowledge-analysis":
+        return []
+
+    sources: list[dict[str, Any]] = []
+    seen_pages: set[tuple[str, Any]] = set()
+    seen_urls: set[str] = set()
+
+    for observation in observations:
+        if observation.get("tool") != KNOWLEDGE_SEARCH_TOOL:
+            continue
+
+        for evidence in _results_of(observation):
+            source_name = evidence.get("source")
+            page_number = evidence.get("page_number")
+            key = (str(source_name), page_number)
+
+            if not source_name or key in seen_pages:
+                continue
+
+            seen_pages.add(key)
+            sources.append(
+                {
+                    "source_type": "private_document",
+                    "title": str(source_name),
+                    "page_number": page_number,
+                    "url": None,
+                }
+            )
+
+    for observation in observations:
+        if observation.get("tool") != WEB_SEARCH_TOOL:
+            continue
+
+        for page in _results_of(observation):
+            url = page.get("url")
+
+            if not url or url in seen_urls:
+                continue
+
+            seen_urls.add(url)
+            sources.append(
+                {
+                    "source_type": "live_official_web",
+                    "title": str(page.get("title") or url),
+                    "page_number": None,
+                    "url": url,
+                }
+            )
+
+    return sources

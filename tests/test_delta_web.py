@@ -1,16 +1,15 @@
 """Regression tests for M23 trusted Delta web retrieval."""
 
-from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
-from agentic_bi.core.interaction import InteractionDecision
 from agentic_bi.tools.delta_current_info import answer_current_delta_question
 from agentic_bi.tools.delta_official_web import (
     _is_allowed_delta_url,
     search_delta_official_web,
 )
+from conftest import FakeClient, routed_to
 
 # -------------------------------------------------------------------
 # Domain validation
@@ -286,30 +285,17 @@ def test_current_info_returns_safe_fallback_when_no_results(monkeypatch):
 # -------------------------------------------------------------------
 
 
-class FakeAgentClient:
-    """Placeholder model client for early current-info routing."""
-
-    pass
-
-
-def test_current_info_exits_before_normal_skill_router(monkeypatch, tmp_path: Path):
+def test_current_info_exits_before_normal_skill_router(monkeypatch, run_store):
     import agentic_bi.core.agent as agent_module
 
-    monkeypatch.setattr(agent_module, "OpenAI", lambda: FakeAgentClient())
-
     monkeypatch.setattr(
-        agent_module,
-        "classify_interaction",
-        lambda question, client=None: InteractionDecision(
-            intent="current_airline_info",
-            reason="Requires current official airline information.",
-        ),
+        agent_module, "classify_interaction", routed_to("current_airline_info")
     )
 
     monkeypatch.setattr(
         agent_module,
         "answer_current_delta_question",
-        lambda question: {
+        lambda question, client=None: {
             "answer": ("Current official Delta baggage information."),
             "sources": [
                 {
@@ -327,20 +313,16 @@ def test_current_info_exits_before_normal_skill_router(monkeypatch, tmp_path: Pa
 
     monkeypatch.setattr(agent_module, "select_skill", fail_if_skill_router_runs)
 
-    monkeypatch.setattr(
-        agent_module, "save_checkpoint", lambda checkpoint: tmp_path / "checkpoint.json"
+    result = agent_module.run_agent(
+        "What is Delta's current baggage policy?", client=FakeClient(), store=run_store
     )
-
-    monkeypatch.setattr(
-        agent_module, "save_trace", lambda trace: tmp_path / "trace.json"
-    )
-
-    result = agent_module.run_agent("What is Delta's current baggage policy?")
 
     assert result.final_answer == "Current official Delta baggage information."
 
     assert result.selected_skill is None
     assert result.stop_reason == "current_airline_info"
+    assert result.web_search_count == 1
+    assert result.sources[0]["url"] == "https://www.delta.com/us/en/baggage/overview"
 
     assert result.step_count == 0
     assert result.tool_call_count == 0

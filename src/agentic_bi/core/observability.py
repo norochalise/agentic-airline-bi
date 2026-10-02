@@ -1,12 +1,12 @@
-import json
 from dataclasses import asdict, dataclass, field
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
 from time import perf_counter
 from typing import Any
 from uuid import uuid4
 
 from agentic_bi.config import TRACES_DIR
+from agentic_bi.core.persistence import read_json, utc_now, write_json
 
 DEFAULT_TRACE_DIR = TRACES_DIR
 
@@ -67,12 +67,6 @@ class ExecutionTimer:
         return elapsed
 
 
-def utc_now() -> datetime:
-    """Return the current UTC datetime."""
-
-    return datetime.now(UTC)
-
-
 def create_trace(question: str) -> AgentTrace:
     """
     Create a new trace for an agent run.
@@ -111,14 +105,6 @@ def finish_trace(trace: AgentTrace, stop_reason: str | None) -> None:
     trace.stop_reason = stop_reason
 
 
-def trace_to_dict(trace: AgentTrace) -> dict[str, Any]:
-    """
-    Convert an AgentTrace into a JSON-serializable dictionary.
-    """
-
-    return asdict(trace)
-
-
 def save_trace(trace: AgentTrace, trace_dir: Path | None = None) -> Path:
     """
     Persist an AgentTrace as formatted JSON.
@@ -128,14 +114,7 @@ def save_trace(trace: AgentTrace, trace_dir: Path | None = None) -> Path:
 
     target_dir = trace_dir if trace_dir is not None else DEFAULT_TRACE_DIR
 
-    target_dir.mkdir(parents=True, exist_ok=True)
-
-    trace_path = target_dir / f"{trace.run_id}.json"
-
-    with trace_path.open("w", encoding="utf-8") as file:
-        json.dump(trace_to_dict(trace), file, indent=2, ensure_ascii=False, default=str)
-
-    return trace_path
+    return write_json(target_dir / f"{trace.run_id}.json", asdict(trace))
 
 
 def load_trace(trace_path: Path) -> AgentTrace:
@@ -143,8 +122,7 @@ def load_trace(trace_path: Path) -> AgentTrace:
     Load a previously persisted trace JSON file.
     """
 
-    with trace_path.open("r", encoding="utf-8") as file:
-        data = json.load(file)
+    data = read_json(trace_path)
 
     events = [
         TraceEvent(

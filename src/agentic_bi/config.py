@@ -84,6 +84,47 @@ def exa_api_key() -> str:
     return _require("EXA_API_KEY")
 
 
+def tool_transport() -> str:
+    """How the flight-data tool runs: in this process, or through MCP."""
+
+    value = os.getenv("TOOL_TRANSPORT", "inprocess").strip().casefold()
+
+    if value not in ("inprocess", "mcp"):
+        raise ConfigError(
+            f"TOOL_TRANSPORT must be 'inprocess' or 'mcp', not {value!r}."
+        )
+
+    return value
+
+
+def persist_runs() -> bool:
+    """Whether traces and checkpoints are written to disk."""
+
+    return os.getenv("PERSIST_RUNS", "true").strip().casefold() not in (
+        "0",
+        "false",
+        "no",
+        "off",
+    )
+
+
+def max_saved_runs() -> int:
+    """How many runs' traces and checkpoints to keep on disk."""
+
+    value = os.getenv("MAX_SAVED_RUNS", "500").strip()
+
+    try:
+        limit = int(value)
+    except ValueError:
+        message = f"MAX_SAVED_RUNS must be an integer, not {value!r}."
+        raise ConfigError(message) from None
+
+    if limit < 1:
+        raise ConfigError("MAX_SAVED_RUNS must be at least 1.")
+
+    return limit
+
+
 def missing_settings(names: tuple[str, ...] = REQUIRED_SETTINGS) -> list[str]:
     """Return the names in `names` that are not set."""
 

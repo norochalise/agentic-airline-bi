@@ -1,6 +1,9 @@
+import logging
 import time
 from collections.abc import Callable
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 class TransientToolError(RuntimeError):
@@ -80,10 +83,11 @@ def execute_with_retry(
 
             delay = base_delay_seconds * (2 ** (attempt - 1))
 
-            print(
-                f"Transient failure. "
-                f"Retrying in {delay:.2f}s "
-                f"(attempt {attempt + 1}/{max_attempts})"
+            logger.warning(
+                "Transient failure; retrying in %.2fs (attempt %d/%d)",
+                delay,
+                attempt + 1,
+                max_attempts,
             )
 
             time.sleep(delay)

@@ -7,6 +7,7 @@ from typing import Any
 from openai import OpenAI
 
 from agentic_bi.config import openai_model
+from agentic_bi.core.clients import get_openai_client
 from agentic_bi.tools.delta_official_web import search_delta_official_web
 
 
@@ -63,7 +64,7 @@ def answer_current_delta_question(
     evidence_text = _build_evidence_text(search_result)
 
     if client is None:
-        client = OpenAI()
+        client = get_openai_client()
 
     response = client.responses.create(
         model=openai_model(),

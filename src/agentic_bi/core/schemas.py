@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field
 
 # -------------------------------------------------------------------
@@ -13,7 +15,10 @@ class KnowledgeSearchArgs(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     query: str = Field(
-        min_length=3, description="Focused semantic query for the local knowledge base."
+        min_length=3,
+        description=(
+            "Focused semantic retrieval query describing the evidence required."
+        ),
     )
 
 
@@ -25,11 +30,17 @@ class OriginCancellationAnalysisArgs(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     min_flights: int = Field(
-        ge=1, description="Minimum flight volume required for inclusion."
+        ge=1,
+        description=(
+            "Minimum number of flights required for an airport to be included "
+            "in the analysis."
+        ),
     )
 
     top_n: int = Field(
-        ge=1, le=50, description="Maximum number of ranked airports to return."
+        ge=1,
+        le=50,
+        description="Number of highest cancellation-rate airports to return.",
     )
 
 
@@ -51,7 +62,16 @@ class KnowledgeSearchResult(BaseModel):
 
     chunk_id: str = Field(min_length=1)
 
-    score: float = Field(ge=-1.0, le=1.0)
+    # "reranked" chunks are primary evidence; "neighbor_previous" and
+    # "neighbor_next" are surrounding context added after reranking.
+    retrieval_type: Literal["reranked", "neighbor_previous", "neighbor_next"]
+
+    # FAISS cosine similarity; None for neighbor chunks, which were not
+    # retrieved by similarity.
+    score: float | None = Field(default=None, ge=-1.0, le=1.0)
+
+    # Cross-encoder relevance (higher is better); None for neighbor chunks.
+    rerank_score: float | None = None
 
     text: str = Field(min_length=1)
 
@@ -119,7 +139,9 @@ class OfficialWebSearchArgs(BaseModel):
 
     query: str = Field(
         min_length=3,
-        description="Focused query for official Delta and U.S. government sites.",
+        description=(
+            "Focused plain-language query describing the official information required."
+        ),
     )
 
 
@@ -147,3 +169,44 @@ class OfficialWebSearchOutput(BaseModel):
     query: str = Field(min_length=3)
 
     results: list[OfficialWebSearchResult]
+
+
+# -------------------------------------------------------------------
+# Customer-credit write action (mock, approval required)
+# -------------------------------------------------------------------
+
+
+class IssueCustomerCreditArgs(BaseModel):
+    """
+    Validated arguments for the mock customer-credit write action.
+    """
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    customer_id: str = Field(min_length=1, description="Customer identifier.")
+
+    amount: float = Field(gt=0, description="Credit amount in US dollars.")
+
+    reason: str = Field(min_length=1, description="Reason for the credit.")
+
+    idempotency_key: str = Field(
+        min_length=1, description="Key that makes repeated requests safe."
+    )
+
+
+class IssueCustomerCreditOutput(BaseModel):
+    """
+    Result of the mock customer-credit write action.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    status: Literal["completed", "duplicate_blocked"]
+
+    customer_id: str
+
+    amount: float
+
+    reason: str | None = None
+
+    idempotency_key: str

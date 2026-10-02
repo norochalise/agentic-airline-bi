@@ -1,3 +1,15 @@
+from agentic_bi.tools.registry import model_tool_specs
+
+
+def _capability_list() -> str:
+    """Numbered capability list generated from the tool registry."""
+
+    return "\n\n".join(
+        f"{number}. {spec.name}{spec.prompt_summary}"
+        for number, spec in enumerate(model_tool_specs(), start=1)
+    )
+
+
 def build_agent_instructions(selected_skill: str | None, skill_content: str) -> str:
     """
     Build the system instructions for the BI agent.
@@ -18,17 +30,7 @@ selected skill.
 
 Available capabilities:
 
-1. search_private_knowledge
-   Search indexed Delta documents, policies, contracts, reports, and
-   internal business knowledge using local semantic retrieval.
-
-2. analyze_top_origin_cancellation_rates
-   Analyze cancellation rates from the July 2026 Delta-marketed
-   domestic flight dataset using deterministic pandas computation.
-
-3. search_official_web (document questions only, when offered)
-   Search current official Delta and U.S. government websites
-   (delta.com, transportation.gov, faa.gov, bts.gov).
+{_capability_list()}
 
 Choose tools based on the information required by the user's goal.
 

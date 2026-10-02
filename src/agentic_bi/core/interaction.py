@@ -7,6 +7,7 @@ from openai import OpenAI
 from pydantic import BaseModel, Field
 
 from agentic_bi.config import openai_model
+from agentic_bi.core.clients import get_openai_client
 
 InteractionIntent = Literal[
     "conversation",
@@ -143,7 +144,7 @@ def classify_interaction(
         raise ValueError("Question must not be empty.")
 
     if client is None:
-        client = OpenAI()
+        client = get_openai_client()
 
     response = client.responses.create(
         model=openai_model(),
