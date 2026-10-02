@@ -9,7 +9,7 @@ from agentic_bi.rag.storage import (
 )
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 CACHE_DIR = (
     PROJECT_ROOT
@@ -24,26 +24,31 @@ INDEX_PATH = (
 )
 
 
-# Load previously generated embeddings and metadata.
-embeddings, chunks = load_embedding_cache(
-    CACHE_DIR
-)
+def main() -> None:
+    # Load previously generated embeddings and metadata.
+    embeddings, chunks = load_embedding_cache(
+        CACHE_DIR
+    )
 
 
-# Build the vector index.
-index = build_faiss_index(
-    embeddings
-)
+    # Build the vector index.
+    index = build_faiss_index(
+        embeddings
+    )
 
 
-# Persist the index for future searches.
-save_faiss_index(
-    index=index,
-    file_path=INDEX_PATH,
-)
+    # Persist the index for future searches.
+    save_faiss_index(
+        index=index,
+        file_path=INDEX_PATH,
+    )
 
 
-print("Chunks:", len(chunks))
-print("Vectors indexed:", index.ntotal)
-print("Dimensions:", index.d)
-print("Saved index:", INDEX_PATH)
+    print("Chunks:", len(chunks))
+    print("Vectors indexed:", index.ntotal)
+    print("Dimensions:", index.d)
+    print("Saved index:", INDEX_PATH)
+
+
+if __name__ == "__main__":
+    main()

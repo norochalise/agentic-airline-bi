@@ -26,3 +26,20 @@ def test_unknown_question_returns_none():
     result = select_skill(question)
 
     assert result is None
+
+def test_keywords_do_not_match_inside_longer_words():
+    # "corporate" contains "rate", "schedule" contains "rule" and
+    # "update" contains "data"; none of them is a routing keyword.
+    question = "Please update the corporate schedule."
+
+    result = select_skill(question)
+
+    assert result is None
+
+
+def test_keywords_still_match_simple_inflections():
+    question = "Which airports had the most delays?"
+
+    result = select_skill(question)
+
+    assert result == "data-analysis"

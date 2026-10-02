@@ -1,6 +1,7 @@
 """Bounded responses for non-BI interaction intents."""
 
 from agentic_bi.core.interaction import InteractionIntent
+from agentic_bi.core.text_match import contains_term
 
 
 APP_NAME = "Airline Intelligence Assistant"
@@ -46,10 +47,8 @@ def build_interaction_response(
 def _build_app_info_response(question: str) -> str:
     """Answer common questions about this application."""
 
-    normalized = question.casefold()
-
     if any(
-        phrase in normalized
+        contains_term(question, phrase)
         for phrase in (
             "who built",
             "who made",
@@ -64,7 +63,7 @@ def _build_app_info_response(question: str) -> str:
         )
 
     if any(
-        phrase in normalized
+        contains_term(question, phrase)
         for phrase in (
             "what can you do",
             "what do you do",
@@ -83,13 +82,12 @@ def _build_app_info_response(question: str) -> str:
         )
 
     if any(
-        phrase in normalized
+        contains_term(question, phrase)
         for phrase in (
             "how were you built",
             "how are you built",
             "how was this built",
             "how does this work",
-            "your architecture",
             "architecture",
             "rag",
             "tools",

@@ -168,6 +168,18 @@ def test_app_info_can_describe_architecture():
     assert "FAISS" in response
 
 
+def test_app_info_architecture_needs_whole_word_match():
+    # "average" contains "rag"; it must not trigger the architecture reply.
+    response = build_interaction_response(
+        intent="app_info",
+        question="What is your average response quality?",
+    )
+
+    assert response is not None
+
+    assert "FAISS" not in response
+
+
 def test_out_of_scope_gets_bounded_response():
     response = build_interaction_response(
         intent="out_of_scope",

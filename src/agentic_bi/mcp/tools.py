@@ -1,6 +1,7 @@
 import asyncio
 from pathlib import Path
 
+import anyio
 from mcp import Client, StdioServerParameters
 
 from agentic_bi.core.reliability import (
@@ -9,7 +10,18 @@ from agentic_bi.core.reliability import (
 )
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+# src/agentic_bi/mcp/tools.py -> repository root
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+
+
+# Failures of the connection itself, which a fresh attempt may avoid.
+_TRANSIENT_ERRORS = (
+    TimeoutError,
+    ConnectionError,
+    anyio.BrokenResourceError,
+    anyio.ClosedResourceError,
+    anyio.EndOfStream,
+)
 
 
 SERVER_PARAMS = StdioServerParameters(
@@ -22,6 +34,47 @@ SERVER_PARAMS = StdioServerParameters(
     ],
     cwd=PROJECT_ROOT,
 )
+
+
+def _leaf_errors(exc: BaseException) -> list[BaseException]:
+    """
+    Flatten the exception groups raised by the MCP client's task group.
+    """
+
+    if isinstance(exc, BaseExceptionGroup):
+        return [
+            leaf
+            for inner in exc.exceptions
+            for leaf in _leaf_errors(inner)
+        ]
+
+    return [exc]
+
+
+def _classify_mcp_failure(exc: Exception) -> Exception:
+    """
+    Map an MCP client failure to a retryable or non-retryable tool error.
+
+    Only connection and timeout failures are retried. A missing `uv`
+    executable, a protocol error from the server, or an unexpected bug
+    would fail the same way again.
+    """
+
+    leaves = _leaf_errors(exc)
+
+    if any(isinstance(leaf, FileNotFoundError) for leaf in leaves):
+        return PermanentToolError(
+            f"MCP server could not be started: {exc}"
+        )
+
+    if any(isinstance(leaf, _TRANSIENT_ERRORS) for leaf in leaves):
+        return TransientToolError(
+            f"MCP connection failed: {exc}"
+        )
+
+    return PermanentToolError(
+        f"MCP execution failed: {exc}"
+    )
 
 
 async def _call_origin_cancellation_tool(
@@ -44,9 +97,7 @@ async def _call_origin_cancellation_tool(
             )
 
     except Exception as exc:
-        raise TransientToolError(
-            f"MCP connection or execution failed: {exc}"
-        ) from exc
+        raise _classify_mcp_failure(exc) from exc
 
 
     if result.is_error:

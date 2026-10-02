@@ -23,8 +23,6 @@ def load_text_document(file_path: Path) -> dict:
         "text": text,
     }
 
-import pymupdf
-
 
 def load_pdf_pages(file_path: Path) -> list[dict]:
     """

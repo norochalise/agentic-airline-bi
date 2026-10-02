@@ -1,3 +1,4 @@
+from agentic_bi.core.text_match import contains_term
 from agentic_bi.skills.registry import SKILL_REGISTRY
 
 
@@ -9,20 +10,18 @@ def select_skill(goal: str) -> str | None:
     matches. Ambiguous ties are left unresolved.
     """
 
-    normalized_goal = goal.lower()
-
     scores: dict[str, int] = {}
 
     for skill_name, config in SKILL_REGISTRY.items():
         keyword_score = sum(
-            keyword in normalized_goal
+            contains_term(goal, keyword)
             for keyword in config["keywords"]
         )
 
         phrase_score = sum(
             3
             for phrase in config["phrases"]
-            if phrase in normalized_goal
+            if contains_term(goal, phrase)
         )
 
         scores[skill_name] = keyword_score + phrase_score
