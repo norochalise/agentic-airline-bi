@@ -1,0 +1,397 @@
+{
+    "dataset_id": "m14_delta_small_pack_v1",
+    "schema_version": "1.0",
+    "created_date": "2026-09-26",
+    "purpose": "Small source-verified baseline for retrieval evaluation; not current policy advice or a comprehensive benchmark.",
+    "source_archive": {
+        "filename": "delta_small_pack.zip",
+        "sha256": "04f11ae5f584b70962da2ea24a48770be99075e894249529f077dc0cacd19365",
+        "entries": [
+            {
+                "archive_path": "delta_small_pack/README.md",
+                "uncompressed_bytes": 3238
+            },
+            {
+                "archive_path": "delta_small_pack/documents/delta_2025_form_10k.pdf",
+                "uncompressed_bytes": 578723
+            },
+            {
+                "archive_path": "delta_small_pack/documents/delta_customer_service_plan_2026-09-25.txt",
+                "uncompressed_bytes": 18841
+            },
+            {
+                "archive_path": "delta_small_pack/documents/delta_domestic_contract_plain_language_2026-08-18.pdf",
+                "uncompressed_bytes": 339813
+            },
+            {
+                "archive_path": "delta_small_pack/documents/dot_september_2026_atcr_july_data.pdf",
+                "uncompressed_bytes": 1617719
+            },
+            {
+                "archive_path": "delta_small_pack/flights/delta_marketing_flights_2026_07.csv",
+                "uncompressed_bytes": 10402216
+            }
+        ]
+    },
+    "provenance": "Inspected the referenced conversation attachment supplied as delta_small_pack.zip. The local Downloads copy has the same SHA-256. Ground truth comes only from the archive documents; recorded website URLs are provenance from the pack, not fetched replacement sources.",
+    "distribution": {
+        "Contract of Carriage": 4,
+        "Customer Service Plan": 3,
+        "Delta 2025 Form 10-K": 2,
+        "DOT ATCR": 1
+    },
+    "excluded_files": [
+        {
+            "archive_path": "delta_small_pack/README.md",
+            "reason": "Pack provenance, not an answer source."
+        },
+        {
+            "archive_path": "delta_small_pack/flights/delta_marketing_flights_2026_07.csv",
+            "reason": "Flight-level structured-data extract; excluded from document retrieval evaluation."
+        }
+    ],
+    "documents": [
+        {
+            "filename": "delta_2025_form_10k.pdf",
+            "sha256": "21aa0b26a5317ede4f520ee874de1ddb5e2917534eaf86c11d12e83f06963217",
+            "bytes": 578723,
+            "pdf_page_count": 105,
+            "title": "Delta Air Lines, Inc. Form 10-K",
+            "version": "Fiscal year ended December 31, 2025 (cover).",
+            "page_numbering": "For the selected evidence, physical PDF page 5 is printed page 2; physical PDF page 20 is printed page 17. PDF page labels are physical positions, not these printed footer numbers.",
+            "source_url_as_recorded_in_pack": "https://s2.q4cdn.com/181345880/files/doc_downloads/annual/2026/DAL-12-31-2025-10K.pdf",
+            "archive_path": "delta_small_pack/documents/delta_2025_form_10k.pdf",
+            "case_count": 2
+        },
+        {
+            "filename": "delta_customer_service_plan_2026-09-25.txt",
+            "sha256": "92c9e647db2adb27555a20796494bb5fdc6bc3d4462480fba3d6aeeaa0e7c9f3",
+            "bytes": 18841,
+            "line_count": 135,
+            "title": "Delta Customer Service Plan",
+            "version": "Captured September 25, 2026; the text states Effective October 24, 2024.",
+            "page_numbering": "No source pages. Use numbered sections and 1-based physical text lines; blank lines are counted.",
+            "source_url_as_recorded_in_pack": "https://www.delta.com/us/en/legal/customer-commitment",
+            "archive_path": "delta_small_pack/documents/delta_customer_service_plan_2026-09-25.txt",
+            "case_count": 3
+        },
+        {
+            "filename": "delta_domestic_contract_plain_language_2026-08-18.pdf",
+            "sha256": "2944de5daf24b81ac5e2f07a848e12f00d33d824e29956bce0742c385d90ea21",
+            "bytes": 339813,
+            "pdf_page_count": 23,
+            "title": "Delta Domestic General Rules Tariff (domestic Contract of Carriage)",
+            "version": "Last Modified August 18, 2026 (cover)",
+            "page_numbering": "Physical PDF pages and printed page numbers agree for the evidence pages: 8, 14, 19, 21.",
+            "source_url_as_recorded_in_pack": "https://www.delta.com/content/dam/delta-www/pdfs/dl-dgr-master-18aug26.pdf",
+            "archive_path": "delta_small_pack/documents/delta_domestic_contract_plain_language_2026-08-18.pdf",
+            "case_count": 4
+        },
+        {
+            "filename": "dot_september_2026_atcr_july_data.pdf",
+            "sha256": "080d1648b2f1cba2761d96de25b00e5136229c074eea47eaff580a89af11610f",
+            "bytes": 1617719,
+            "pdf_page_count": 62,
+            "title": "U.S. DOT Air Travel Consumer Report",
+            "version": "Issued September 2026; selected flight-delay tables cover July 2026. Other sections include different periods, such as 2nd-quarter oversales.",
+            "page_numbering": "Physical PDF pages and printed page numbers agree on accepted pages 6 and 8.",
+            "source_url_as_recorded_in_pack": "https://www.transportation.gov/sites/dot.gov/files/2026-09/September%202026%20ATCR%20revised%209-22-2026.pdf",
+            "archive_path": "delta_small_pack/documents/dot_september_2026_atcr_july_data.pdf",
+            "case_count": 1
+        }
+    ],
+    "scoring_policy": {
+        "unit": "Ranked retrieved chunks, in their original retrieval order.",
+        "query_input": "Use only each case.question as the query. Keep all labels, page numbers and expected answers out of the query/context used by the retriever.",
+        "filename_matching": "Match canonical source basename exactly after normalizing path separators. If your corpus renames files, create a fixed alias map verified by source SHA-256.",
+        "pdf_page_basis": "relevant_pages are 1-based physical PDF positions. Convert confirmed zero-based parser page metadata by adding 1; do not add 1 to metadata already 1-based. printed_pages are for human audit only.",
+        "multiple_pages": "Any listed relevant page can independently support the answer (OR, not AND). In retrieval_010, page 6 OR page 8 is sufficient.",
+        "text_location": "Customer Service Plan relevant_pages=null means no pagination, not whole-document relevance. Use the named section and evidence paragraph/line. Never invent page 1.",
+        "primary_relevance": "Correct source plus answer-bearing passage. Before scoring, bind the verified evidence to actual chunk IDs by inspecting all chunks covering the listed page/section, independently of ranked FAISS output. Accept a chunk only if its text/table context supports the complete requested fact(s). Freeze those qrels before retrieval. This dataset supplies source evidence labels; it does not invent unseen chunk IDs.",
+        "coarse_locator_diagnostic": "A correct source and matching page/section can be scored separately as locator Hit@k/MRR. This is a proxy and can count a chunk from the right page that lacks the answer; never label it strict evidence retrieval.",
+        "chunking_limits": "If chunking separates facts, qualifiers or table headers so no individual chunk supports the answer, record an evidence-fragmentation issue. Do not silently count partial evidence as a full hit. Top-k combined-evidence coverage can be a separate metric.",
+        "rank_policy": "Use original chunk ranks, retaining duplicates unless a separate deduplication policy was fixed before all comparisons. Do not deduplicate to four document names.",
+        "hit_at_k": "For k in [1,3,5], each case is 1 if at least one relevant chunk is at rank <= k, else 0. Dataset Hit@k is the mean over all 10 cases.",
+        "mrr": "Reciprocal rank is 1/r for the first relevant chunk, else 0 when absent from the evaluated ranking. MRR is the mean over all cases. If only top 5 is retrieved, call the result MRR@5; do not claim untruncated MRR.",
+        "unjudged": "Missing source/page metadata or uncertain passage relevance must be logged for review, never automatically counted as correct. An unjudged candidate is not known irrelevant; report any incomplete labeling.",
+        "reporting": "Report numerator/10 with Hit@1, Hit@3 and Hit@5; MRR depth; per-case first relevant rank; and per-document-family counts. One case changes aggregate Hit@k by 10 percentage points.",
+        "cost": "Once corpus chunks have been mapped to frozen qrels, scoring is deterministic and requires no LLM judge or paid API call."
+    },
+    "limitations": [
+        "Ten cases are a development baseline, not a held-out comprehensive test.",
+        "Questions are deliberately source-scoped where needed to avoid ambiguous cross-document relevance.",
+        "Source/page labels are verified; corpus-specific chunk relevance IDs must be bound after inspecting the actual indexed chunks.",
+        "No retriever was run and no Hit@k/MRR result is claimed."
+    ],
+    "cases": [
+        {
+            "question": "Under Delta's domestic Contract of Carriage, how is an involuntary refund calculated when no part of the ticket has been used?",
+            "expected_document": "delta_domestic_contract_plain_language_2026-08-18.pdf",
+            "relevant_pages": [
+                21
+            ],
+            "printed_pages": [
+                "21"
+            ],
+            "expected_topic": "Involuntary refund amount for a wholly unused ticket",
+            "section": "Rule 22: REFUNDS > A. Involuntary Refunds",
+            "expected_answer": "Where an involuntary refund is required under Rule 22(A) and no portion of the ticket has been used, the refund equals the fare paid.",
+            "supporting_quote": "If no portion of the ticket has been used, the refund will be an amount equal to the fare paid.",
+            "why_relevant": "The sentence states the calculation requested, under the involuntary-refund heading. The question assumes entitlement and does not ask for all refund-eligibility conditions.",
+            "scope_note": "Page 15 gives triggering events under Rule 19(A), but is not sufficient evidence for this specific unused-ticket calculation; page 22 discusses voluntary fully refundable tickets.",
+            "id": "retrieval_001",
+            "document_group": "Contract of Carriage",
+            "expected_evidence": "Where an involuntary refund is required under Rule 22(A) and no portion of the ticket has been used, the refund equals the fare paid.",
+            "page_match_mode": "any_of",
+            "verification_status": "verified_against_supplied_snapshot",
+            "verification_method": "Direct source reading; PDF evidence pages also rendered and visually inspected. No FAISS or other retrieval result used to establish relevance.",
+            "quote_note": "Supporting quotations preserve source wording; PDF line breaks and extraction spacing may be cleaned. The DOT quotation is a row transcription and must be read with its column headings."
+        },
+        {
+            "question": "What is the general maximum baggage-liability amount per fare-paying passenger in Delta's domestic Contract of Carriage, excluding wheelchairs and other assistive devices?",
+            "expected_document": "delta_domestic_contract_plain_language_2026-08-18.pdf",
+            "relevant_pages": [
+                14
+            ],
+            "printed_pages": [
+                "14"
+            ],
+            "expected_topic": "General domestic baggage liability cap",
+            "section": "Rule 17: BAGGAGE > B. Baggage Liability > 1(a); exception in 3(a)",
+            "expected_answer": "The general cap is $4,700 per fare-paying passenger, limited to proven damage or loss. The maximum-liability limitation does not apply to wheelchairs or other assistive devices.",
+            "supporting_quote": "Under no circumstances shall the liability for loss, damage, or delay in the delivery of baggage exceed $4,700 per fare-paying passenger.",
+            "why_relevant": "Rule 17(B)(1)(a) states the general cap and unit; 17(B)(3)(a), on the same page, identifies the assistive-device exception.",
+            "scope_note": "This is a maximum, not an automatic payout. Page 15 repeats $4,700 only in the separate multiple-carrier rule and is not a substitute for the general-rule evidence.",
+            "id": "retrieval_002",
+            "document_group": "Contract of Carriage",
+            "expected_evidence": "The general cap is $4,700 per fare-paying passenger, limited to proven damage or loss. The maximum-liability limitation does not apply to wheelchairs or other assistive devices.",
+            "page_match_mode": "any_of",
+            "verification_status": "verified_against_supplied_snapshot",
+            "verification_method": "Direct source reading; PDF evidence pages also rendered and visually inspected. No FAISS or other retrieval result used to establish relevance.",
+            "quote_note": "Supporting quotations preserve source wording; PDF line breaks and extraction spacing may be cleaned. The DOT quotation is a row transcription and must be read with its column headings."
+        },
+        {
+            "question": "Under Delta's domestic Contract of Carriage, may an unaccompanied child aged 5 through 7 take a connecting itinerary?",
+            "expected_document": "delta_domestic_contract_plain_language_2026-08-18.pdf",
+            "relevant_pages": [
+                8
+            ],
+            "printed_pages": [
+                "8"
+            ],
+            "expected_topic": "Flight restrictions for unaccompanied children aged 5-7",
+            "section": "Rule 8: ACCEPTANCE OF CHILDREN > B. Unaccompanied Children Under the age of 15 > (2)",
+            "expected_answer": "No. Children ages 5 through 7 may travel unaccompanied only on non-stop flights and may not connect to other airlines.",
+            "supporting_quote": "Children ages 5 through 7 may travel unaccompanied on non-stop flights only and may not connect to other airlines.",
+            "why_relevant": "The sentence directly resolves the age-specific connecting-itinerary question; nearby provisions for ages 8-14 are different.",
+            "scope_note": "The Customer Service Plan mentions unaccompanied-minor service but does not state this age-specific non-stop restriction.",
+            "id": "retrieval_003",
+            "document_group": "Contract of Carriage",
+            "expected_evidence": "No. Children ages 5 through 7 may travel unaccompanied only on non-stop flights and may not connect to other airlines.",
+            "page_match_mode": "any_of",
+            "verification_status": "verified_against_supplied_snapshot",
+            "verification_method": "Direct source reading; PDF evidence pages also rendered and visually inspected. No FAISS or other retrieval result used to establish relevance.",
+            "quote_note": "Supporting quotations preserve source wording; PDF line breaks and extraction spacing may be cleaned. The DOT quotation is a row transcription and must be read with its column headings."
+        },
+        {
+            "question": "Under Delta's domestic Contract of Carriage, if all compensation conditions are met and Delta cannot arrange Qualifying Alternative Transportation, what involuntary denied-boarding compensation is payable?",
+            "expected_document": "delta_domestic_contract_plain_language_2026-08-18.pdf",
+            "relevant_pages": [
+                19
+            ],
+            "printed_pages": [
+                "19"
+            ],
+            "expected_topic": "Denied-boarding compensation without Qualifying Alternative Transportation",
+            "section": "Rule 20: DENIED BOARDING COMPENSATION > F. Amount of Involuntary Denied Boarding Compensation > (2)",
+            "expected_answer": "400% of the fare, including surcharges and air transportation taxes, to the next stopover or, if none, final destination, capped at $2,150.",
+            "supporting_quote": "compensation in an amount equal to 400% of the fare (including any surcharges and air transportation taxes)",
+            "supporting_description": "The same paragraph ends with a maximum payment of $2,150.00 and specifies the next stopover or, if none, final destination.",
+            "why_relevant": "Rule 20(F)(2) states both the percentage and dollar cap for the exact scenario in the question.",
+            "scope_note": "Eligibility and the absence of Qualifying Alternative Transportation are stipulated by the question; its definition on page 3 and eligibility rules on pages 18-19 are context, not additional required answer pages.",
+            "id": "retrieval_004",
+            "document_group": "Contract of Carriage",
+            "expected_evidence": "400% of the fare, including surcharges and air transportation taxes, to the next stopover or, if none, final destination, capped at $2,150.",
+            "page_match_mode": "any_of",
+            "verification_status": "verified_against_supplied_snapshot",
+            "verification_method": "Direct source reading; PDF evidence pages also rendered and visually inspected. No FAISS or other retrieval result used to establish relevance.",
+            "quote_note": "Supporting quotations preserve source wording; PDF line breaks and extraction spacing may be cleaned. The DOT quotation is a row transcription and must be read with its column headings."
+        },
+        {
+            "id": "retrieval_005",
+            "question": "According to Delta's Customer Service Plan, how soon after Delta learns of a flight-status change will it provide information about a known delay, cancellation, or diversion?",
+            "expected_document": "delta_customer_service_plan_2026-09-25.txt",
+            "relevant_pages": null,
+            "expected_topic": "Timing of information about known delays, cancellations, and diversions",
+            "section": "2. Notifying consumers of known delays, cancellations, and diversions",
+            "relevant_lines": [
+                18,
+                18
+            ],
+            "expected_answer": "Within 30 minutes of Delta becoming aware of the change in the flight's status.",
+            "expected_evidence": "Section 2 expressly ties the 30-minute notification commitment to Delta becoming aware of the flight-status change.",
+            "supporting_quote": "within 30 minutes of Delta becoming aware of the change in the status of the flight",
+            "why_relevant": "This sentence directly states both the notification interval and the event that starts that interval. Section 10's separate one-hour-before-departure rule concerns itinerary changes and does not answer this question.",
+            "document_group": "Customer Service Plan",
+            "printed_pages": null,
+            "page_match_mode": "not_applicable",
+            "verification_status": "verified_against_supplied_snapshot",
+            "verification_method": "Direct reading of the supplied TXT, with exact section, line and quotation checks. No FAISS or other retrieval result used to establish relevance.",
+            "quote_note": "Supporting quotations preserve source wording; PDF line breaks and extraction spacing may be cleaned. The DOT quotation is a row transcription and must be read with its column headings."
+        },
+        {
+            "id": "retrieval_006",
+            "question": "Under Delta's Customer Service Plan, what are the deadlines for acknowledging and substantively responding to a written customer complaint, and what response deadline applies to a disability-related complaint?",
+            "expected_document": "delta_customer_service_plan_2026-09-25.txt",
+            "relevant_pages": null,
+            "expected_topic": "Written customer complaint response deadlines",
+            "section": "11. Ensuring responsiveness to customer complaints",
+            "relevant_lines": [
+                121,
+                121
+            ],
+            "expected_answer": "Delta will acknowledge a written customer complaint within 30 days of receipt and send a substantive response within 60 days of receipt. A disability-related complaint receives a dispositive response within 30 days of receipt.",
+            "expected_evidence": "Section 11 gives the 30-day acknowledgement, 60-day substantive-response, and 30-day disability-complaint dispositive-response deadlines in one paragraph.",
+            "supporting_quote": "We will acknowledge receipt of written customer complaints within 30 days of their receipt, and will send a substantive response within 60 days of receiving the complaint. Disability-related complaints will receive a dispositive response within 30 days of receiving the complaint.",
+            "why_relevant": "The paragraph explicitly contains all three requested deadlines and distinguishes the disability-related complaint response.",
+            "document_group": "Customer Service Plan",
+            "printed_pages": null,
+            "page_match_mode": "not_applicable",
+            "verification_status": "verified_against_supplied_snapshot",
+            "verification_method": "Direct reading of the supplied TXT, with exact section, line and quotation checks. No FAISS or other retrieval result used to establish relevance.",
+            "quote_note": "Supporting quotations preserve source wording; PDF line breaks and extraction spacing may be cleaned. The DOT quotation is a row transcription and must be read with its column headings."
+        },
+        {
+            "id": "retrieval_007",
+            "question": "According to Delta's Customer Service Plan, which airport officials ensure services are properly implemented for customers with disabilities, and how can a passenger request one?",
+            "expected_document": "delta_customer_service_plan_2026-09-25.txt",
+            "relevant_pages": null,
+            "expected_topic": "Complaint Resolution Officials for passengers with disabilities",
+            "section": "6. Properly accommodating passengers with disabilities and children traveling alone, including during tarmac delays.",
+            "relevant_lines": [
+                81,
+                81
+            ],
+            "expected_answer": "Delta designates Complaint Resolution Officials (CROs) in all airports to ensure services are properly implemented for customers with disabilities. A passenger can request a CRO by contacting a Delta agent.",
+            "expected_evidence": "The CRO paragraph in Section 6 names the officials, describes their responsibility and airport coverage, and states the request route.",
+            "supporting_quote": "we designate Complaint Resolution Officials (CROs) in all airports who are responsible for ensuring services are properly implemented for our customers with disabilities. You may request a CRO by contacting a Delta agent.",
+            "why_relevant": "This single paragraph directly names the responsible officials and explains how to request one.",
+            "document_group": "Customer Service Plan",
+            "printed_pages": null,
+            "page_match_mode": "not_applicable",
+            "verification_status": "verified_against_supplied_snapshot",
+            "verification_method": "Direct reading of the supplied TXT, with exact section, line and quotation checks. No FAISS or other retrieval result used to establish relevance.",
+            "quote_note": "Supporting quotations preserve source wording; PDF line breaks and extraction spacing may be cleaned. The DOT quotation is a row transcription and must be read with its column headings."
+        },
+        {
+            "id": "retrieval_008",
+            "document_group": "Delta 2025 Form 10-K",
+            "question": "According to Delta's 2025 Form 10-K, how did its 2025 operating priorities differ between core hubs and coastal hubs?",
+            "expected_document": "delta_2025_form_10k.pdf",
+            "relevant_pages": [
+                5
+            ],
+            "printed_pages": [
+                "2"
+            ],
+            "expected_topic": "Core-hub growth and coastal-hub operating efficiency",
+            "section": "Item 1. Business > Competitive Advantages and Brand Strength > Global Network",
+            "expected_answer": "Delta focused on increasing flights at its core hubs while improving the efficiency of operations at its coastal hubs.",
+            "supporting_quote": "In 2025, we continued to focus on increasing flights at our core hubs while improving the efficiency of our operations in our coastal hubs.",
+            "why_relevant": "This paragraph directly contrasts the two hub strategies during 2025, so a chunk containing it supports the complete answer.",
+            "page_evidence": [
+                {
+                    "pdf_page_1based": 5,
+                    "pdf_page_label": "5",
+                    "printed_page": "2",
+                    "locator": "Global Network, third paragraph, beginning 'In 2025, we continued to focus'",
+                    "verification": "Read complete extracted page and visually inspected rendered PDF page, including its printed footer; no footnotes qualify this passage.",
+                    "quote_whitespace": "Line breaks normalized to spaces; wording preserved."
+                }
+            ],
+            "verification_method": "Direct source reading; PDF evidence pages also rendered and visually inspected. No FAISS or other retrieval result used to establish relevance.",
+            "expected_evidence": "Delta focused on increasing flights at its core hubs while improving the efficiency of operations at its coastal hubs.",
+            "page_match_mode": "any_of",
+            "verification_status": "verified_against_supplied_snapshot",
+            "quote_note": "Supporting quotations preserve source wording; PDF line breaks and extraction spacing may be cleaned. The DOT quotation is a row transcription and must be read with its column headings."
+        },
+        {
+            "id": "retrieval_009",
+            "document_group": "Delta 2025 Form 10-K",
+            "question": "In the aircraft-fuel-price risk factor in Delta's 2025 Form 10-K, what percentages of operating expense are stated for fuel costs in 2025, 2024, and 2023?",
+            "expected_document": "delta_2025_form_10k.pdf",
+            "relevant_pages": [
+                20
+            ],
+            "printed_pages": [
+                "17"
+            ],
+            "expected_topic": "Fuel cost share of operating expense",
+            "section": "Item 1A. Risk Factors > Risk Factors Relating to Delta > Aircraft fuel price risk",
+            "expected_answer": "Fuel costs represented 17% of operating expense in 2025, 19% in 2024, and 21% in 2023.",
+            "supporting_quote": "Fuel costs represented 17%, 19% and 21% of our operating expense in 2025, 2024 and 2023, respectively.",
+            "why_relevant": "The sentence explicitly maps each of the three requested years to its percentage; the surrounding risk factor identifies exposure to aircraft fuel prices.",
+            "page_evidence": [
+                {
+                    "pdf_page_1based": 20,
+                    "pdf_page_label": "20",
+                    "printed_page": "17",
+                    "locator": "First paragraph under the risk-factor heading beginning 'Our business and results of operations are dependent on the price of aircraft fuel'",
+                    "verification": "Read complete extracted page and visually inspected rendered PDF page, including its printed footer; no footnotes qualify these percentages.",
+                    "quote_whitespace": "Line breaks normalized to spaces; wording preserved."
+                }
+            ],
+            "verification_method": "Direct source reading; PDF evidence pages also rendered and visually inspected. No FAISS or other retrieval result used to establish relevance.",
+            "expected_evidence": "Fuel costs represented 17% of operating expense in 2025, 19% in 2024, and 21% in 2023.",
+            "page_match_mode": "any_of",
+            "verification_status": "verified_against_supplied_snapshot",
+            "quote_note": "Supporting quotations preserve source wording; PDF line breaks and extraction spacing may be cleaned. The DOT quotation is a row transcription and must be read with its column headings.",
+            "scope_note": "The question asks for the percentages explicitly stated in the risk factor. PDF page 43 states only the 2025 percentage; PDF page 59 provides expense values from which ratios can be calculated, rather than the requested statement."
+        },
+        {
+            "id": "retrieval_010",
+            "question": "For July 2026, what were the on-time arrival percentage and marketing-carrier rank of the Delta Air Lines Network, including its branded codeshare partners, at all U.S. airports?",
+            "expected_document": "dot_september_2026_atcr_july_data.pdf",
+            "document_identity": "U.S. Department of Transportation, Office of Aviation Consumer Protection, Air Travel Consumer Report, issued September 2026; Flight Delays data for July 2026.",
+            "relevant_pages": [
+                6,
+                8
+            ],
+            "printed_pages": [
+                "6",
+                "8"
+            ],
+            "expected_topic": "Delta marketing network July 2026 on-time arrival percentage and rank",
+            "expected_answer": "71.7% of the Delta Air Lines Network's reported flight operations arrived on time; it ranked 3rd among the reporting marketing carriers for July 2026.",
+            "expected_evidence": {
+                "period": "July 2026",
+                "carrier_scope": "Delta Air Lines Network (marketing carrier, including branded codeshare partners)",
+                "geographic_scope": "At all U.S. airports",
+                "percent_on_time": 71.7,
+                "rank": 3,
+                "footnote_scope": "Table 1 footnote 1 includes U.S. airlines with at least 0.5% of total domestic scheduled-service passenger revenues plus branded codeshare partners. Displayed statistics use one decimal place; rankings use nine decimal places.",
+                "distinctions": "The 71.9% figure is for Delta-operated mainline flights, not its marketing network. Table 1B's 78.1% and rank 2 are year-to-date, not July."
+            },
+            "supporting_quote": "DELTA AIR LINES NETWORK 211 71.7 3",
+            "supporting_description": "On page 6, Table 1's network row aligns 211 with Number of Airports Reported, 71.7 with Percent of On-Time Arrivals, and 3 with Rank. Page 8 Table 1B independently repeats 71.7 and rank 3 in the Jul 26 columns of the bold Delta Air Lines marketing-network row.",
+            "why_relevant": "Either accepted page directly contains both requested July marketing-network values. The explicit network scope and month prevent confusion with the nearby Delta mainline figures or year-to-date columns.",
+            "verification": {
+                "method": "Read the uploaded PDF's extracted page text, rendered and visually inspected complete PDF pages 6 and 8 including table headers, Delta rows, and footnotes; no FAISS or external factual source used.",
+                "page_numbering": "Both physical PDF page indexes and printed page numbers are 1-based and agree on pages 6 and 8.",
+                "alternative_evidence": "Pages 6 and 8 are alternative independently sufficient pages, not two jointly required pages.",
+                "context_pages": [
+                    1,
+                    4,
+                    5
+                ],
+                "context_pages_note": "Cover verifies report issue and period; page 4 explains on-time reporting; page 5 explains branded codeshare networks. These contextual pages alone do not answer the question and should not be accepted as positive retrieval hits."
+            },
+            "document_group": "DOT ATCR",
+            "section": "Flight Delays; Table 1, Delta Air Lines Network row, Percent of On-Time Arrivals and Rank columns; alternative Table 1B, bold Delta Air Lines marketing-network row, Jul 26 percentage and rank columns.",
+            "page_match_mode": "any_of",
+            "verification_status": "verified_against_supplied_snapshot",
+            "verification_method": "Direct source reading; PDF evidence pages also rendered and visually inspected. No FAISS or other retrieval result used to establish relevance.",
+            "quote_note": "Supporting quotations preserve source wording; PDF line breaks and extraction spacing may be cleaned. The DOT quotation is a row transcription and must be read with its column headings."
+        }
+    ]
+}

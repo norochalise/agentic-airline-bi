@@ -1,0 +1,12 @@
+.env
+.venv/
+__pycache__/
+*.pyc
+
+# Runtime observability artifacts
+data/traces/
+data/checkpoints/
+.pytest_tmp/
+.pytest_cache/
+# Local planning notes
+REFACTOR_PLAN.md

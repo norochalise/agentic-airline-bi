@@ -1,0 +1,120 @@
+[
+    {
+        "id": "data_001",
+        "question": "Which Delta origin airports had the highest cancellation rates in July 2026? Consider only airports with at least 500 flights and show the top 5.",
+        "expected_skill": "data-analysis",
+        "expected_tool": "analyze_top_origin_cancellation_rates",
+        "expected_arguments": {
+            "min_flights": 500,
+            "top_n": 5
+        }
+    },
+    {
+        "id": "data_002",
+        "question": "Show me the top 3 Delta origin airports by cancellation rate in July 2026, considering airports with at least 500 flights.",
+        "expected_skill": "data-analysis",
+        "expected_tool": "analyze_top_origin_cancellation_rates",
+        "expected_arguments": {
+            "min_flights": 500,
+            "top_n": 3
+        }
+    },
+    {
+        "id": "data_003",
+        "question": "Rank the 5 origin airports with the highest cancellation rate, but only include airports with at least 1000 Delta flights.",
+        "expected_skill": "data-analysis",
+        "expected_tool": "analyze_top_origin_cancellation_rates",
+        "expected_arguments": {
+            "min_flights": 1000,
+            "top_n": 5
+        }
+    },
+    {
+        "id": "data_004",
+        "question": "For July 2026, what are the 2 worst Delta origins by cancellation percentage among airports with 750 or more flights?",
+        "expected_skill": "data-analysis",
+        "expected_tool": "analyze_top_origin_cancellation_rates",
+        "expected_arguments": {
+            "min_flights": 750,
+            "top_n": 2
+        }
+    },
+    {
+        "id": "data_005",
+        "question": "Using the flight dataset, find the top 4 origin airports for cancellation rate. Ignore airports with fewer than 600 flights.",
+        "expected_skill": "data-analysis",
+        "expected_tool": "analyze_top_origin_cancellation_rates",
+        "expected_arguments": {
+            "min_flights": 600,
+            "top_n": 4
+        }
+    },
+    {
+        "id": "data_006",
+        "question": "Which origin has the highest cancellation rate among Delta origins with at least 2000 flights?",
+        "expected_skill": "data-analysis",
+        "expected_tool": "analyze_top_origin_cancellation_rates",
+        "expected_arguments": {
+            "min_flights": 2000,
+            "top_n": 1
+        }
+    },
+    {
+        "id": "knowledge_001",
+        "question": "What does Delta say about refunds when a flight is cancelled?",
+        "expected_skill": "knowledge-analysis",
+        "expected_tool": "search_private_knowledge"
+    },
+    {
+        "id": "knowledge_002",
+        "question": "What does Delta's customer service plan say about cancellations?",
+        "expected_skill": "knowledge-analysis",
+        "expected_tool": "search_private_knowledge"
+    },
+    {
+        "id": "knowledge_003",
+        "question": "According to Delta's Contract of Carriage, when is a passenger eligible for a refund?",
+        "expected_skill": "knowledge-analysis",
+        "expected_tool": "search_private_knowledge"
+    },
+    {
+        "id": "knowledge_004",
+        "question": "What commitments does Delta make to customers when flights are disrupted?",
+        "expected_skill": "knowledge-analysis",
+        "expected_tool": "search_private_knowledge"
+    },
+    {
+        "id": "knowledge_005",
+        "question": "Search Delta's documents and explain its policy for refundable tickets.",
+        "expected_skill": "knowledge-analysis",
+        "expected_tool": "search_private_knowledge"
+    },
+    {
+        "id": "knowledge_006",
+        "question": "According to the customer service plan, how does Delta handle passenger complaints?",
+        "expected_skill": "knowledge-analysis",
+        "expected_tool": "search_private_knowledge"
+    },
+    {
+        "id": "boundary_001",
+        "question": "According to Delta's policy documents, what does the airline say about flight cancellations?",
+        "expected_skill": "knowledge-analysis",
+        "expected_tool": "search_private_knowledge"
+    },
+    {
+        "id": "boundary_002",
+        "question": "Based on the July 2026 flight data, which Delta origins experienced the highest cancellation rates? Use a minimum of 500 flights and return 3 airports.",
+        "expected_skill": "data-analysis",
+        "expected_tool": "analyze_top_origin_cancellation_rates",
+        "expected_arguments": {
+            "min_flights": 500,
+            "top_n": 3
+        }
+    },
+    {
+        "id": "boundary_003",
+        "question": "What does Delta's documentation say customers should expect after a cancellation?",
+        "expected_skill": "knowledge-analysis",
+        "expected_tool": "search_private_knowledge"
+    }
+]

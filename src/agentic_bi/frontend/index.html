@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <meta name="description" content="Agentic Business Intelligence portfolio project">
+
+    <title>Agentic Business Intelligence</title>
+
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+
+<body>
+
+    <main class="app">
+
+        <!-- ==================================================
+             Header
+        =================================================== -->
+
+        <header class="hero">
+
+            <div class="brand">
+                <span class="brand-mark"></span>
+                <span>Agentic Business Intelligence</span>
+            </div>
+
+            <h1>Airline Intelligence Assistant</h1>
+
+            <p class="hero-description">
+                Ask questions across flight data and airline documents.
+            </p>
+
+        </header>
+
+
+        <!-- ==================================================
+             Prompt Composer
+        =================================================== -->
+
+        <section class="ask-section">
+
+            <form id="ask-form">
+
+                <label class="question-label" for="question">
+                    Ask the agent
+                </label>
+
+                <div class="prompt-box">
+
+                    <textarea id="question" name="question" rows="4"
+                        placeholder="Ask about flight performance, cancellations, airline policies, refunds, customer commitments, or company documents..."
+                        required></textarea>
+
+
+                    <div class="prompt-footer">
+
+                        <span class="prompt-hint">
+                            Data analysis · Private knowledge
+                        </span>
+
+
+                        <button id="submit-button" type="submit">
+                            <span>Ask Agent</span>
+
+                            <svg viewBox="0 0 24 24" aria-hidden="true">
+                                <path d="M5 12h14M13 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2"
+                                    stroke-linecap="round" stroke-linejoin="round" />
+                            </svg>
+
+                        </button>
+
+                    </div>
+
+                </div>
+
+            </form>
+
+
+            <!-- Demo information -->
+
+            <div class="below-prompt">
+
+                <p class="demo-note">
+                    <strong>Portfolio demo</strong>
+                    <span class="separator">·</span>
+                    Limited dataset and selected public documents.
+                    Not affiliated with or endorsed by any airline.
+                </p>
+
+
+                <p class="powered-by">
+                    Powered by
+                    <a href="https://noroinsight.com/" target="_blank" rel="noopener noreferrer">
+                        Noro Insight
+                        <span aria-hidden="true">↗</span>
+                    </a>
+                </p>
+
+            </div>
+
+        </section>
+
+
+        <!-- ==================================================
+             Loading
+        =================================================== -->
+
+        <section id="loading" class="loading hidden" aria-live="polite">
+            <span class="spinner"></span>
+
+            <span>
+                Analyzing your question...
+            </span>
+        </section>
+
+
+        <!-- ==================================================
+             Error
+        =================================================== -->
+
+        <section id="error" class="error-message hidden" aria-live="polite"></section>
+
+
+        <!-- ==================================================
+             Results
+        =================================================== -->
+
+        <section id="result" class="result-section hidden">
+
+            <!-- Answer -->
+
+            <section class="answer-section">
+
+                <div class="section-header">
+
+                    <div>
+                        <span class="section-label">
+                            Agent response
+                        </span>
+
+                        <h2>Answer</h2>
+                    </div>
+
+
+                    <span class="status-badge">
+                        <span class="status-dot"></span>
+                        Completed
+                    </span>
+
+                </div>
+
+
+                <div id="answer" class="answer"></div>
+
+            </section>
+
+
+            <!-- ==================================================
+                 Agent Execution
+            =================================================== -->
+
+            <section class="execution-section">
+
+                <div class="section-header execution-header">
+
+                    <div>
+                        <span class="section-label">
+                            Runtime details
+                        </span>
+
+                        <h2>Agent Execution</h2>
+                    </div>
+
+                    <span class="execution-description">
+                        How this request was handled
+                    </span>
+
+                </div>
+
+
+                <div class="execution-grid">
+
+                    <div class="metric">
+
+                        <span class="metric-label">
+                            Skill
+                        </span>
+
+                        <strong id="selected-skill" class="metric-value"></strong>
+
+                    </div>
+
+
+                    <div class="metric">
+
+                        <span class="metric-label">
+                            Stop reason
+                        </span>
+
+                        <strong id="stop-reason" class="metric-value"></strong>
+
+                    </div>
+
+
+                    <div class="metric">
+
+                        <span class="metric-label">
+                            Steps
+                        </span>
+
+                        <strong id="step-count" class="metric-value metric-number"></strong>
+
+                    </div>
+
+
+                    <div class="metric">
+
+                        <span class="metric-label">
+                            Tool calls
+                        </span>
+
+                        <strong id="tool-call-count" class="metric-value metric-number"></strong>
+
+                    </div>
+
+
+                    <div class="metric">
+
+                        <span class="metric-label">
+                            Knowledge searches
+                        </span>
+
+                        <strong id="knowledge-search-count" class="metric-value metric-number"></strong>
+
+                    </div>
+
+
+                    <div class="metric">
+
+                        <span class="metric-label">
+                            Data analyses
+                        </span>
+
+                        <strong id="data-analysis-count" class="metric-value metric-number"></strong>
+
+                    </div>
+
+
+                    <div class="metric">
+
+                        <span class="metric-label">
+                            Errors
+                        </span>
+
+                        <strong id="error-count" class="metric-value metric-number"></strong>
+
+                    </div>
+
+                </div>
+
+
+                <!-- Run ID -->
+
+                <div class="run-info">
+
+                    <span class="metric-label">
+                        Run ID
+                    </span>
+
+                    <code id="run-id"></code>
+
+                </div>
+
+            </section>
+
+        </section>
+
+    </main>
+
+
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify/dist/purify.min.js"></script>
+    <script src="/static/app.js"></script>
+
+</body>
+
+</html>

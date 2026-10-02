@@ -1,0 +1,105 @@
+{
+    "dataset_id": "m15_agent_end_to_end_v1",
+    "schema_version": "1.0",
+    "description": "Small end-to-end evaluation set for the Delta Agentic BI system.",
+    "cases": [
+        {
+            "id": "agent_001",
+            "question": "Which 5 origin airports have the highest cancellation rates among airports with at least 500 flights?",
+            "expected_skill": "data-analysis",
+            "expected_tool": "analyze_top_origin_cancellation_rates",
+            "expected_arguments": {
+                "min_flights": 500,
+                "top_n": 5
+            },
+            "expected_stop_reason": "final_answer",
+            "answer_must_contain": [
+                "LGA",
+                "JFK"
+            ]
+        },
+        {
+            "id": "agent_002",
+            "question": "Which 3 origin airports have the highest cancellation rates among airports with at least 1000 flights?",
+            "expected_skill": "data-analysis",
+            "expected_tool": "analyze_top_origin_cancellation_rates",
+            "expected_arguments": {
+                "min_flights": 1000,
+                "top_n": 3
+            },
+            "expected_stop_reason": "final_answer",
+            "answer_must_contain": []
+        },
+        {
+            "id": "agent_003",
+            "question": "Using the flight data, show the top 4 origin airports by cancellation rate with at least 700 flights.",
+            "expected_skill": "data-analysis",
+            "expected_tool": "analyze_top_origin_cancellation_rates",
+            "expected_arguments": {
+                "min_flights": 700,
+                "top_n": 4
+            },
+            "expected_stop_reason": "final_answer",
+            "answer_must_contain": []
+        },
+        {
+            "id": "agent_004",
+            "question": "According to Delta's Contract of Carriage, what refund is due when an unused ticket qualifies for an involuntary refund?",
+            "expected_skill": "knowledge-analysis",
+            "expected_tool": "search_private_knowledge",
+            "expected_arguments": null,
+            "expected_stop_reason": "final_answer",
+            "answer_must_contain": [
+                "fare"
+            ]
+        },
+        {
+            "id": "agent_005",
+            "question": "What does Delta's Customer Service Plan say about notifying passengers of known delays, cancellations, and diversions?",
+            "expected_skill": "knowledge-analysis",
+            "expected_tool": "search_private_knowledge",
+            "expected_arguments": null,
+            "expected_stop_reason": "final_answer",
+            "answer_must_contain": [
+                "30"
+            ]
+        },
+        {
+            "id": "agent_006",
+            "question": "According to Delta's Customer Service Plan, how long does Delta have to acknowledge a written complaint and provide a substantive response?",
+            "expected_skill": "knowledge-analysis",
+            "expected_tool": "search_private_knowledge",
+            "expected_arguments": null,
+            "expected_stop_reason": "final_answer",
+            "answer_must_contain": [
+                "30",
+                "60"
+            ]
+        },
+        {
+            "id": "agent_007",
+            "question": "What does Delta's Contract of Carriage say about unaccompanied children ages 5 through 7?",
+            "expected_skill": "knowledge-analysis",
+            "expected_tool": "search_private_knowledge",
+            "expected_arguments": null,
+            "expected_stop_reason": "final_answer",
+            "answer_must_contain": [
+                "5",
+                "7"
+            ]
+        },
+        {
+            "id": "agent_008",
+            "question": "According to Delta's 2025 10-K, what percentage of operating expense was fuel in 2025, 2024, and 2023?",
+            "expected_skill": "knowledge-analysis",
+            "expected_tool": "search_private_knowledge",
+            "expected_arguments": null,
+            "expected_stop_reason": "final_answer",
+            "answer_must_contain": [
+                "17",
+                "19",
+                "21"
+            ]
+        }
+    ]
+}

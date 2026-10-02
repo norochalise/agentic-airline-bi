@@ -1,0 +1,106 @@
+"""Trusted live-web search restricted to official Delta web properties."""
+
+from __future__ import annotations
+
+import os
+from typing import Any
+from urllib.parse import urlparse
+
+from dotenv import load_dotenv
+from exa_py import Exa
+
+
+load_dotenv()
+
+
+ALLOWED_DOMAINS = (
+    "delta.com",
+)
+
+
+def _is_allowed_delta_url(url: str) -> bool:
+    """Return True only for delta.com or its subdomains."""
+
+    try:
+        hostname = urlparse(url).hostname
+    except ValueError:
+        return False
+
+    if hostname is None:
+        return False
+
+    hostname = hostname.casefold()
+
+    return (
+        hostname == "delta.com"
+        or hostname.endswith(".delta.com")
+    )
+
+
+def search_delta_official_web(
+    query: str,
+    num_results: int = 3,
+) -> dict[str, Any]:
+    """Search current official Delta information using Exa."""
+
+    query = query.strip()
+
+    if not query:
+        raise ValueError(
+            "Web-search query must not be empty."
+        )
+
+    api_key = os.getenv("EXA_API_KEY")
+
+    if not api_key:
+        raise RuntimeError(
+            "EXA_API_KEY is not configured."
+        )
+
+    exa = Exa(api_key=api_key)
+
+    response = exa.search_and_contents(
+        query,
+        num_results=num_results,
+        include_domains=[
+            "delta.com",
+        ],
+        highlights=True,
+    )
+
+    results = []
+
+    for result in response.results:
+        url = getattr(result, "url", None)
+
+        if not url:
+            continue
+
+        if not _is_allowed_delta_url(url):
+            continue
+
+        results.append(
+            {
+                "title": (
+                    getattr(result, "title", None)
+                    or "Delta"
+                ),
+                "url": url,
+                "highlights": list(
+                    getattr(
+                        result,
+                        "highlights",
+                        None,
+                    )
+                    or []
+                ),
+            }
+        )
+
+    return {
+        "query": query,
+        "source_type": "live_official_web",
+        "provider": "exa",
+        "result_count": len(results),
+        "results": results,
+    }
