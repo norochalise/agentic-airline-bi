@@ -20,7 +20,7 @@ Every answer comes with labelled sources (document page, dataset or URL) and its
 
 - **Live progress:** the chat shows each step as it happens ("Searching company documents…", "Analyzing flight data…"), streamed from `POST /ask/stream` as Server-Sent Events.
 - **Follow-up questions:** the browser sends the last three exchanges, and a short model call rewrites "and for JFK?" into a standalone question. The answer shows how it was understood.
-- **Feedback:** 👍/👎 on each answer is appended to `data/feedback.jsonl` with the run ID, so a rating can be matched to its trace.
+- **Feedback:** 👍/👎 on each answer is appended to `data/feedback/feedback.jsonl` with the run ID, so a rating can be matched to its trace.
 
 ## Architecture
 
@@ -80,6 +80,21 @@ uv run abi-serve            # http://127.0.0.1:8000  (API docs at /docs)
 ```
 
 The local embedding and reranker models download on first use, and the server loads them at startup.
+
+**Or with Docker** (no local Python needed):
+
+```powershell
+copy .env.example .env      # fill in your keys
+docker compose up --build   # http://localhost:8000
+```
+
+- **Models are baked in:** the image includes the models and data, so the container starts without downloading anything.
+- **Run data is kept:** run logs and feedback are stored in named volumes that survive rebuilds.
+- **Small, unprivileged image:** it uses the CPU-only PyTorch build and runs as a non-root user.
+
+**Continuous integration:** `.github/workflows/ci.yml` runs on every push and pull request.
+- It runs ruff and the full test suite, which needs no API keys.
+- It also builds the Docker image.
 
 | Setting | Required | Purpose |
 |---|---|---|

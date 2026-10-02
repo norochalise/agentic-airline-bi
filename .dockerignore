@@ -1,0 +1,22 @@
+# Keep the build context small and free of secrets.
+.git
+.env
+.venv
+**/__pycache__
+*.pyc
+.pytest_cache
+.pytest_tmp
+.ruff_cache
+.coverage
+htmlcov
+
+# Runtime output stays on the host (mounted as volumes instead).
+data/traces
+data/checkpoints
+data/feedback
+
+# Not needed to run the app.
+tests
+docs
+scripts
+REFACTOR_PLAN.md

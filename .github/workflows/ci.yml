@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+permissions:
+  contents: read
+
+# A newer push to the same branch cancels the run in progress.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: Lint and tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.8.4"
+          python-version: "3.13"
+          enable-cache: true
+
+      - name: Install (exactly what uv.lock pins)
+        run: uv sync --frozen
+
+      - name: Lint
+        run: uv run ruff check
+
+      - name: Formatting
+        run: uv run ruff format --check
+
+      # Fake model clients: no API keys, no paid calls. The paid evals
+      # (abi-eval-tools, -e2e, ...) stay a manual step.
+      - name: Tests
+        run: uv run pytest --cov=agentic_bi --cov-report=term
+
+  docker:
+    name: Docker image builds
+    needs: checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build (not pushed)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          tags: agentic-bi:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

@@ -31,7 +31,7 @@ FAISS_INDEX_PATH = RAG_CACHE_DIR / "delta_knowledge.faiss"
 
 TRACES_DIR = DATA_DIR / "traces"
 CHECKPOINTS_DIR = DATA_DIR / "checkpoints"
-FEEDBACK_PATH = DATA_DIR / "feedback.jsonl"
+FEEDBACK_PATH = DATA_DIR / "feedback" / "feedback.jsonl"
 
 
 def project_relative(path: Path) -> str:

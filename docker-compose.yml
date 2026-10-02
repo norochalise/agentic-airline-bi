@@ -1,0 +1,20 @@
+# docker compose up --build   ->   http://localhost:8000
+services:
+  app:
+    build: .
+    image: agentic-bi
+    ports:
+      - "8000:8000"
+    # OPENAI_API_KEY, OPENAI_MODEL and EXA_API_KEY (see .env.example).
+    env_file: .env
+    volumes:
+      # Run logs and reader feedback survive container rebuilds.
+      - traces:/app/data/traces
+      - checkpoints:/app/data/checkpoints
+      - feedback:/app/data/feedback
+    restart: unless-stopped
+
+volumes:
+  traces:
+  checkpoints:
+  feedback:

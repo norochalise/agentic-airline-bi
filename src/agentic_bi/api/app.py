@@ -231,7 +231,7 @@ def ask_agent_stream(request: AskRequest) -> StreamingResponse:
 
 @app.post("/feedback", status_code=204)
 def record_feedback(feedback: FeedbackRequest) -> None:
-    """Append a reader's rating of one answer to data/feedback.jsonl."""
+    """Append a reader's rating of one answer to data/feedback/feedback.jsonl."""
 
     FEEDBACK_PATH.parent.mkdir(parents=True, exist_ok=True)
 
