@@ -1,0 +1,87 @@
+[
+    {
+        "id": "analytics_001",
+        "question": "Which routes from ATL had the lowest on-time arrival rate in July 2026? Only include routes with at least 100 flights and show the top 5.",
+        "expected_tool": "rank_flight_performance",
+        "expected_arguments": {
+            "metric": "on_time_arrival_rate",
+            "group_by": "route",
+            "order": "lowest",
+            "origin": "ATL",
+            "min_flights": 100,
+            "top_n": 5
+        }
+    },
+    {
+        "id": "analytics_002",
+        "question": "Which destination airports had the highest average arrival delay? Consider airports with at least 1000 flights and show the top 3.",
+        "expected_tool": "rank_flight_performance",
+        "expected_arguments": {
+            "metric": "avg_arrival_delay_minutes",
+            "group_by": "destination",
+            "order": "highest",
+            "min_flights": 1000,
+            "top_n": 3
+        }
+    },
+    {
+        "id": "analytics_003",
+        "question": "Compare the cancellation rates of JFK and LGA as departure airports.",
+        "expected_tool": "rank_flight_performance",
+        "expected_arguments": {
+            "metric": "cancellation_rate",
+            "group_by": "origin",
+            "only": ["JFK", "LGA"]
+        }
+    },
+    {
+        "id": "analytics_004",
+        "question": "Which operating carrier had the best on-time arrival rate?",
+        "expected_tool": "rank_flight_performance",
+        "expected_arguments": {
+            "metric": "on_time_arrival_rate",
+            "group_by": "operating_carrier",
+            "order": "highest"
+        }
+    },
+    {
+        "id": "analytics_005",
+        "question": "Show the average arrival delay for each day of the week, in calendar order.",
+        "expected_tool": "rank_flight_performance",
+        "expected_arguments": {
+            "metric": "avg_arrival_delay_minutes",
+            "group_by": "day_of_week",
+            "order": "calendar"
+        }
+    },
+    {
+        "id": "analytics_006",
+        "question": "What were the main causes of flight delays in the July 2026 flight data?",
+        "expected_tool": "analyze_delay_causes",
+        "expected_arguments": {
+            "origin": null,
+            "destination": null,
+            "operating_carrier": null
+        }
+    },
+    {
+        "id": "analytics_007",
+        "question": "In the flight data, why were flights departing ORD delayed or cancelled?",
+        "expected_tool": "analyze_delay_causes",
+        "expected_arguments": {
+            "origin": "ORD"
+        }
+    },
+    {
+        "id": "analytics_008",
+        "question": "Which origin airports had the highest diversion rate among airports with at least 2000 flights? Show the top 3.",
+        "expected_tool": "rank_flight_performance",
+        "expected_arguments": {
+            "metric": "diversion_rate",
+            "group_by": "origin",
+            "order": "highest",
+            "min_flights": 2000,
+            "top_n": 3
+        }
+    }
+]

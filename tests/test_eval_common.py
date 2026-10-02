@@ -40,3 +40,34 @@ def test_frozen_eval_files_load():
     qrels = load_qrels()
     assert set(qrels) == {case["id"] for case in load_cases("retrieval_cases.json")}
     assert all(qrels.values())
+
+
+def test_analytics_eval_checks_tool_and_listed_arguments():
+    from agentic_bi.evaluation.analytics_eval import evaluate_case
+
+    case = {
+        "expected_tool": "rank_flight_performance",
+        "expected_arguments": {"metric": "cancellation_rate", "only": ["JFK", "LGA"]},
+    }
+    history = [
+        {
+            "tool": "rank_flight_performance",
+            "arguments": {"metric": "cancellation_rate", "only": ["LGA", "JFK"]},
+        }
+    ]
+
+    assert evaluate_case(case, history) == []
+    assert evaluate_case(case, [])[0].startswith("expected rank_flight_performance")
+
+    history[0]["arguments"]["metric"] = "diversion_rate"
+    assert evaluate_case(case, history) == [
+        "metric: expected 'cancellation_rate', got 'diversion_rate'"
+    ]
+
+
+def test_analytics_cases_use_valid_arguments():
+    from agentic_bi.tools.registry import TOOL_REGISTRY
+
+    for case in load_cases("analytics_cases.json"):
+        fields = TOOL_REGISTRY[case["expected_tool"]].input_model.model_fields
+        assert set(case["expected_arguments"]) <= set(fields), case["id"]

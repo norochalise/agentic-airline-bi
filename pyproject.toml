@@ -25,6 +25,7 @@ abi-eval-interaction = "agentic_bi.evaluation.interaction_routing_eval:run_inter
 abi-eval-tools = "agentic_bi.evaluation.tool_selection_eval:main"
 abi-eval-arguments = "agentic_bi.evaluation.argument_eval:main"
 abi-eval-e2e = "agentic_bi.evaluation.agent_end_to_end_eval:main"
+abi-eval-analytics = "agentic_bi.evaluation.analytics_eval:main"
 abi-eval-retrieval = "agentic_bi.evaluation.retrieval_eval:run_evaluation"
 abi-eval-reranked = "agentic_bi.evaluation.improved_retrieval_eval:main"
 

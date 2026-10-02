@@ -10,7 +10,7 @@
 
 | Question type | Example | Path |
 |---|---|---|
-| Flight data | *Which 3 origin airports have the highest cancellation rates among airports with at least 1000 flights?* | pandas over July 2026 flight data. The model never calculates the numbers. |
+| Flight data | *Which routes from ATL had the worst on-time rate?* · *Why were flights out of ORD delayed?* | Deterministic pandas over July 2026 flight data: rankings by airport, route, carrier or day, and delay-cause breakdowns, shown as **bar charts with a table view**. The model never calculates the numbers. |
 | Company documents | *What does the customer service plan say about tarmac delays?* | Local RAG: MiniLM → FAISS → cross-encoder rerank → neighbour context, with page citations |
 | Documents + current rules | *Does the contract of carriage still say the same about refunds today?* | Documents first, then **one** official-web search (delta.com, transportation.gov, faa.gov, bts.gov) |
 | Current information | *Can I bring my dog in the cabin?* | Official-web search only |
@@ -28,7 +28,7 @@ flowchart TB
     IR -->|current info| WEB["Official-web answer"]
     IR -->|data / documents| LOOP["Bounded tool loop<br/>budgets · guards · retries"]
     LOOP --> REG["ToolSpec registry<br/>one definition per tool"]
-    REG --> DATA["Flight analysis<br/>pandas (in-process, or MCP)"]
+    REG --> DATA["Flight analytics<br/>pandas: rankings, delay causes<br/>(cancellation tool also via MCP)"]
     REG --> RAG["Knowledge search<br/>FAISS + reranker"]
     REG --> OW["Official-web search<br/>documents first, once"]
     LOOP -.-> OBS[("Traces + checkpoints")]
@@ -61,7 +61,7 @@ Retrieval, on 10 source-verified cases with strict answer-bearing labels:
 | MRR@5 | 0.600 | **0.750** |
 | Expanded-context evidence coverage | — | **10/10** |
 
-There are 141 `pytest` tests, and they make no paid API calls.
+There are 158 `pytest` tests, and they make no paid API calls. The on-time metric reproduces the DOT Air Travel Consumer Report for July 2026: 71.7% for the Delta network and 71.9% for Delta mainline.
 
 Methodology: [`docs/EVALUATION.md`](docs/EVALUATION.md).
 
@@ -97,6 +97,7 @@ uv run abi-eval-interaction   # paid: calls the model
 uv run abi-eval-tools         # paid
 uv run abi-eval-arguments     # paid
 uv run abi-eval-e2e           # paid
+uv run abi-eval-analytics     # paid: the flight-analytics tools
 ```
 
 Rebuild the RAG index after changing documents with `uv run python scripts/build_embedding_cache.py`, then `uv run python scripts/build_faiss_index.py`.
@@ -130,7 +131,7 @@ scripts/        index-building scripts
 ## Known limitations
 
 - The evaluation sets are small and frozen; the percentages are not production accuracy.
-- The flight data is one month (July 2026) of Delta-marketed U.S. domestic flights, and the data tool covers origin cancellation rates only.
+- The flight data is one month (July 2026) of Delta-marketed U.S. domestic flights. Analyses are the fixed metrics and groupings the tools offer, not arbitrary queries.
 - The document corpus is four documents (about 700 chunks).
 - Checkpoints restore application state, not an interrupted model conversation.
 - The main workflow is read-only. A mock write action shows the approval guard.
