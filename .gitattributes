@@ -1,0 +1,7 @@
+# Build and CI files must keep LF endings, even in Windows checkouts:
+# CRLF breaks multi-line RUN commands in the Dockerfile.
+Dockerfile text eol=lf
+.dockerignore text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.sh text eol=lf
