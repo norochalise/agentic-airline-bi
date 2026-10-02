@@ -1,15 +1,9 @@
 from functools import lru_cache
-from pathlib import Path
 
+from agentic_bi.config import FAISS_INDEX_PATH, RAG_CACHE_DIR
 from agentic_bi.rag.embeddings import load_embedding_model
 from agentic_bi.rag.faiss_store import load_faiss_index, search_faiss
 from agentic_bi.rag.storage import load_embedding_cache
-
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
-
-RAG_CACHE_DIR = PROJECT_ROOT / "data" / "processed" / "rag"
-
-FAISS_INDEX_PATH = RAG_CACHE_DIR / "delta_knowledge.faiss"
 
 
 @lru_cache(maxsize=1)

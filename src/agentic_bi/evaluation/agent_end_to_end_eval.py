@@ -1,7 +1,7 @@
 import json
-from pathlib import Path
 from typing import Any
 
+from agentic_bi.config import EVALS_DIR
 from agentic_bi.core.agent import run_agent
 from agentic_bi.evaluation.failure_analysis import (
     FailureRecord,
@@ -9,9 +9,7 @@ from agentic_bi.evaluation.failure_analysis import (
     summarize_failure_categories,
 )
 
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
-
-CASES_PATH = PROJECT_ROOT / "evals" / "agent_end_to_end_cases.json"
+CASES_PATH = EVALS_DIR / "agent_end_to_end_cases.json"
 
 
 def load_cases() -> list[dict[str, Any]]:

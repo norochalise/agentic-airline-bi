@@ -1,9 +1,8 @@
-from pathlib import Path
-
+from agentic_bi.config import SKILLS_DIR
 from agentic_bi.skills.registry import SKILL_REGISTRY
 
 # Root-level directory containing reusable SKILL.md definitions.
-SKILLS_ROOT = Path(__file__).resolve().parents[3] / "skills"
+SKILLS_ROOT = SKILLS_DIR
 
 
 def load_skill(skill_name: str) -> str:

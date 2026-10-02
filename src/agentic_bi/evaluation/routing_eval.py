@@ -1,11 +1,9 @@
 import json
-from pathlib import Path
 
+from agentic_bi.config import EVALS_DIR
 from agentic_bi.skills.router import select_skill
 
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
-
-EVAL_FILE = PROJECT_ROOT / "evals" / "agent_cases.json"
+EVAL_FILE = EVALS_DIR / "agent_cases.json"
 
 
 def load_cases() -> list[dict]:

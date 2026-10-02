@@ -1,6 +1,8 @@
 from sentence_transformers import SentenceTransformer
 
-DEFAULT_EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
+from agentic_bi.config import EMBEDDING_MODEL
+
+DEFAULT_EMBEDDING_MODEL = EMBEDDING_MODEL
 
 
 def load_embedding_model(

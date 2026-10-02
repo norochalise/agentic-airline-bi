@@ -2,15 +2,12 @@
 
 from __future__ import annotations
 
-import os
 from typing import Any
 
-from dotenv import load_dotenv
 from openai import OpenAI
 
+from agentic_bi.config import openai_model
 from agentic_bi.tools.delta_official_web import search_delta_official_web
-
-load_dotenv()
 
 
 def _build_evidence_text(search_result: dict[str, Any]) -> str:
@@ -69,7 +66,7 @@ def answer_current_delta_question(
         client = OpenAI()
 
     response = client.responses.create(
-        model=os.environ["OPENAI_MODEL"],
+        model=openai_model(),
         instructions=(
             "You are answering a current airline-information question. "
             "Use only the evidence supplied in the input. "

@@ -2,6 +2,8 @@ from pathlib import Path
 
 import pymupdf
 
+from agentic_bi.config import project_relative
+
 
 def load_text_document(file_path: Path) -> dict:
     """
@@ -16,7 +18,7 @@ def load_text_document(file_path: Path) -> dict:
 
     text = file_path.read_text(encoding="utf-8")
 
-    return {"source": file_path.name, "path": str(file_path), "text": text}
+    return {"source": file_path.name, "path": project_relative(file_path), "text": text}
 
 
 def load_pdf_pages(file_path: Path) -> list[dict]:
@@ -42,7 +44,7 @@ def load_pdf_pages(file_path: Path) -> list[dict]:
             pages.append(
                 {
                     "source": file_path.name,
-                    "path": str(file_path),
+                    "path": project_relative(file_path),
                     "page_number": page_index + 1,
                     "text": text,
                 }

@@ -1,11 +1,9 @@
 import json
-from pathlib import Path
 
+from agentic_bi.config import EVALS_DIR
 from agentic_bi.core.interaction import classify_interaction
 
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
-
-EVAL_FILE = PROJECT_ROOT / "evals" / "interaction_cases.json"
+EVAL_FILE = EVALS_DIR / "interaction_cases.json"
 
 
 def load_cases() -> list[dict]:

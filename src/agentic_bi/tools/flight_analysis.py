@@ -1,20 +1,9 @@
 from functools import lru_cache
-from pathlib import Path
 
 import pandas as pd
 
+from agentic_bi.config import FLIGHT_DATA_PATH
 from agentic_bi.data.loader import load_flight_data
-
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
-
-FLIGHT_DATA_PATH = (
-    PROJECT_ROOT
-    / "data"
-    / "raw"
-    / "delta_small_pack"
-    / "flights"
-    / "delta_marketing_flights_2026_07.csv"
-)
 
 
 @lru_cache(maxsize=1)

@@ -1,12 +1,10 @@
 import json
-from pathlib import Path
 from typing import Any
 
+from agentic_bi.config import EVALS_DIR
 from agentic_bi.tools.knowledge_search import _load_retrieval_assets
 
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
-
-EVAL_FILE = PROJECT_ROOT / "evals" / "retrieval_cases.json"
+EVAL_FILE = EVALS_DIR / "retrieval_cases.json"
 
 
 def load_cases() -> list[dict[str, Any]]:

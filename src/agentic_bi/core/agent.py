@@ -1,12 +1,18 @@
 import json
-import os
 from dataclasses import dataclass, field
 from typing import Any
 
-from dotenv import load_dotenv
 from openai import OpenAI
 from pydantic import ValidationError
 
+from agentic_bi.config import (
+    MAX_DATA_ANALYSIS_CALLS,
+    MAX_KNOWLEDGE_SEARCHES,
+    MAX_STEPS,
+    MAX_TOOL_CALLS,
+    MAX_WEB_SEARCHES,
+    openai_model,
+)
 from agentic_bi.core.checkpoint import create_checkpoint, save_checkpoint
 from agentic_bi.core.interaction import classify_interaction
 from agentic_bi.core.interaction_response import build_interaction_response
@@ -34,15 +40,6 @@ from agentic_bi.tools.registry import (
     TOOL_POLICIES,
     get_tools_for_skill,
 )
-
-load_dotenv()
-
-
-MAX_STEPS = 4
-MAX_TOOL_CALLS = 4
-MAX_KNOWLEDGE_SEARCHES = 2
-MAX_DATA_ANALYSIS_CALLS = 1
-MAX_WEB_SEARCHES = 1
 
 WEB_SEARCH_TOOL = "search_official_web"
 
@@ -388,10 +385,7 @@ def run_agent(question: str, verbose: bool = False) -> AgentResult:
     # ---------------------------------------------------------------
 
     response = client.responses.create(
-        model=os.environ["OPENAI_MODEL"],
-        input=state.goal,
-        instructions=instructions,
-        tools=tools,
+        model=openai_model(), input=state.goal, instructions=instructions, tools=tools
     )
 
     # ---------------------------------------------------------------
@@ -929,7 +923,7 @@ def run_agent(question: str, verbose: bool = False) -> AgentResult:
             final_instructions = build_final_answer_instructions(instructions)
 
             response = client.responses.create(
-                model=os.environ["OPENAI_MODEL"],
+                model=openai_model(),
                 previous_response_id=response.id,
                 input=tool_outputs,
                 instructions=final_instructions,
@@ -944,7 +938,7 @@ def run_agent(question: str, verbose: bool = False) -> AgentResult:
         # -----------------------------------------------------------
 
         response = client.responses.create(
-            model=os.environ["OPENAI_MODEL"],
+            model=openai_model(),
             previous_response_id=response.id,
             input=tool_outputs,
             instructions=instructions,

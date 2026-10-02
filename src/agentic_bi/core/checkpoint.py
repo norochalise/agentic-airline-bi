@@ -4,11 +4,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from agentic_bi.config import CHECKPOINTS_DIR
 from agentic_bi.core.state import AgentState
 
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
-
-DEFAULT_CHECKPOINT_DIR = PROJECT_ROOT / "data" / "checkpoints"
+DEFAULT_CHECKPOINT_DIR = CHECKPOINTS_DIR
 
 
 @dataclass

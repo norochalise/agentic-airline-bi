@@ -1,3 +1,4 @@
+from agentic_bi.config import RETRIEVAL_CANDIDATE_K, RETRIEVAL_TOP_K
 from agentic_bi.core.schemas import (
     KnowledgeSearchArgs,
     KnowledgeSearchOutput,
@@ -30,7 +31,7 @@ def run_knowledge_search(query: str) -> dict:
     """
 
     improved_result = search_private_knowledge_improved(
-        query=query, candidate_k=15, top_k=5
+        query=query, candidate_k=RETRIEVAL_CANDIDATE_K, top_k=RETRIEVAL_TOP_K
     )
 
     # ---------------------------------------------------------------

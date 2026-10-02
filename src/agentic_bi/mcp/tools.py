@@ -1,14 +1,10 @@
 import asyncio
-from pathlib import Path
 
 import anyio
 from mcp import Client, StdioServerParameters
 
+from agentic_bi.config import PROJECT_ROOT
 from agentic_bi.core.reliability import PermanentToolError, TransientToolError
-
-# src/agentic_bi/mcp/tools.py -> repository root
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
-
 
 # Failures of the connection itself, which a fresh attempt may avoid.
 _TRANSIENT_ERRORS = (

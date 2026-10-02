@@ -1,14 +1,12 @@
 """Interaction routing and scope control for the Agentic BI application."""
 
 import json
-import os
 from typing import Literal
 
-from dotenv import load_dotenv
 from openai import OpenAI
 from pydantic import BaseModel, Field
 
-load_dotenv()
+from agentic_bi.config import openai_model
 
 InteractionIntent = Literal[
     "conversation",
@@ -148,7 +146,7 @@ def classify_interaction(
         client = OpenAI()
 
     response = client.responses.create(
-        model=os.environ["OPENAI_MODEL"],
+        model=openai_model(),
         instructions=ROUTER_INSTRUCTIONS,
         input=question,
         text={

@@ -1,15 +1,38 @@
 """FastAPI application for the Agentic Business Intelligence system."""
 
-from pathlib import Path
+import logging
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from agentic_bi.api.schemas import AskRequest, AskResponse
+from agentic_bi.config import (
+    FRONTEND_DIR,
+    OPTIONAL_SETTINGS,
+    missing_settings,
+    validate_settings,
+)
 from agentic_bi.core.agent import run_agent
 
+logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Refuse to start without the required settings."""
+
+    validate_settings()
+
+    for name in missing_settings(OPTIONAL_SETTINGS):
+        logger.warning("%s is not set; official-web answers will fail.", name)
+
+    yield
+
+
 app = FastAPI(
+    lifespan=lifespan,
     title="Agentic Business Intelligence",
     description=(
         "Agentic BI API for structured flight-data analysis, "
@@ -23,8 +46,6 @@ app = FastAPI(
 # ---------------------------------------------------------------------------
 # Frontend
 # ---------------------------------------------------------------------------
-
-FRONTEND_DIR = Path(__file__).resolve().parents[1] / "frontend"
 
 
 @app.middleware("http")

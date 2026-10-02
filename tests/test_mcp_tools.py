@@ -2,11 +2,7 @@ import anyio
 import pytest
 
 from agentic_bi.core.reliability import PermanentToolError, TransientToolError
-from agentic_bi.mcp.tools import PROJECT_ROOT, _classify_mcp_failure
-
-
-def test_project_root_is_repository_root():
-    assert (PROJECT_ROOT / "pyproject.toml").is_file()
+from agentic_bi.mcp.tools import _classify_mcp_failure
 
 
 @pytest.mark.parametrize(

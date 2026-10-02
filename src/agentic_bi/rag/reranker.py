@@ -2,7 +2,9 @@ from functools import lru_cache
 
 from sentence_transformers import CrossEncoder
 
-RERANKER_MODEL_NAME = "cross-encoder/ms-marco-MiniLM-L6-v2"
+from agentic_bi.config import RERANKER_MODEL
+
+RERANKER_MODEL_NAME = RERANKER_MODEL
 
 
 @lru_cache(maxsize=1)

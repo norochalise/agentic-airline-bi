@@ -2,15 +2,12 @@
 
 from __future__ import annotations
 
-import os
 from typing import Any
 from urllib.parse import urlparse
 
-from dotenv import load_dotenv
 from exa_py import Exa
 
-load_dotenv()
-
+from agentic_bi.config import exa_api_key
 
 ALLOWED_DOMAINS = ("delta.com", "transportation.gov", "faa.gov", "bts.gov")
 
@@ -42,12 +39,7 @@ def search_delta_official_web(query: str, num_results: int = 3) -> dict[str, Any
     if not query:
         raise ValueError("Web-search query must not be empty.")
 
-    api_key = os.getenv("EXA_API_KEY")
-
-    if not api_key:
-        raise RuntimeError("EXA_API_KEY is not configured.")
-
-    exa = Exa(api_key=api_key)
+    exa = Exa(api_key=exa_api_key())
 
     response = exa.search_and_contents(
         query,

@@ -2,12 +2,11 @@ import json
 from pathlib import Path
 from typing import Any
 
+from agentic_bi.config import EVALS_DIR
 from agentic_bi.tools.knowledge_search import search_private_knowledge
 
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
-
-CASES_FILE = PROJECT_ROOT / "evals" / "retrieval_cases.json"
-QRELS_FILE = PROJECT_ROOT / "evals" / "retrieval_qrels.json"
+CASES_FILE = EVALS_DIR / "retrieval_cases.json"
+QRELS_FILE = EVALS_DIR / "retrieval_qrels.json"
 
 TOP_K = 5
 

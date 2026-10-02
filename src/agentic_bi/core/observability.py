@@ -6,9 +6,9 @@ from time import perf_counter
 from typing import Any
 from uuid import uuid4
 
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
+from agentic_bi.config import TRACES_DIR
 
-DEFAULT_TRACE_DIR = PROJECT_ROOT / "data" / "traces"
+DEFAULT_TRACE_DIR = TRACES_DIR
 
 
 @dataclass

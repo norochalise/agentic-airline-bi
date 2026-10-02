@@ -1,13 +1,9 @@
-from pathlib import Path
-
+from agentic_bi.config import FAISS_INDEX_PATH, RAG_CACHE_DIR
 from agentic_bi.rag.faiss_store import build_faiss_index, save_faiss_index
 from agentic_bi.rag.storage import load_embedding_cache
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-
-CACHE_DIR = PROJECT_ROOT / "data" / "processed" / "rag"
-
-INDEX_PATH = CACHE_DIR / "delta_knowledge.faiss"
+CACHE_DIR = RAG_CACHE_DIR
+INDEX_PATH = FAISS_INDEX_PATH
 
 
 def main() -> None:
