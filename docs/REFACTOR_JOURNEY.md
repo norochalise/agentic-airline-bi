@@ -18,7 +18,7 @@ A short log of how the Airline Intelligence Assistant went from "broken after a 
 
 | | Before | Now |
 |---|---|---|
-| Tests | 52 (agent tests broken) | **170**, all passing |
+| Tests | 52 (agent tests broken) | **173**, all passing (also in CI) |
 | Python lines | 8,590 | ~6,500 |
 | `core/agent.py` | 1,021 lines, one ~840-line function | 789 lines in small functions |
 | Places one tool is defined | 7 | **1** (`ToolSpec`) |
@@ -196,6 +196,23 @@ A short log of how the Airline Intelligence Assistant went from "broken after a 
 
 **Design choice:** rewriting the question was chosen over passing the chat history to every component. All the earlier work (evals, guards, tool selection) still applies to one self-contained question, and the extra cost is only paid when there *is* history.
 
+## Step 8 (part 1): Docker and CI
+
+**Docker**
+- One `docker compose up --build` runs the whole app. The image bakes in the models and data, so the container starts with **no downloads** (models load in 0.3 s).
+- It runs as a non-root user, has a health check, and keeps run logs and feedback in volumes.
+
+**A hidden 4+ GB problem.** sentence-transformers pulls in PyTorch, and on Linux the default PyTorch wheel bundles CUDA plus several GB of NVIDIA libraries. A CPU-only app never uses them. Pointing uv at PyTorch's CPU index *for Linux only* removed every `nvidia-*` package from the lock. The image is now 2.8 GB, Windows and macOS are untouched, and CI installs are much faster.
+
+**CI.** A GitHub Actions workflow runs ruff, the 173 tests and a Docker build on every push and pull request.
+- The tests use fake model clients, so CI needs **no API keys and costs nothing**.
+- A small test keeps the Dockerfile's baked-in model names in sync with `config.py`.
+- `.gitattributes` pins LF line endings, because CRLF from a Windows checkout breaks multi-line Dockerfile commands.
+
+**Verified locally:** the image built, the container started healthy, and it answered a real document question with 6 sources and no errors. The workflow runs once the repository is pushed to GitHub.
+
+**Lesson:** check what your dependencies pull in. The largest part of the image came from GPU libraries for hardware the app never uses.
+
 ---
 
 ## How we verified without burning API money
@@ -209,4 +226,4 @@ A short log of how the Airline Intelligence Assistant went from "broken after a 
 
 ## What's next
 
-8. **Ship it:** Docker, CI and a live demo.
+8. **Ship it (part 2):** push to GitHub so CI runs, then a live demo with rate limiting.
