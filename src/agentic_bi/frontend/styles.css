@@ -860,3 +860,75 @@ textarea {
         grid-template-columns: 1fr;
     }
 }
+
+/* =========================================================
+   Sources
+========================================================= */
+
+.sources {
+    margin-top: 20px;
+    padding-top: 16px;
+
+    border-top: 1px solid #eaecf0;
+}
+
+.source-list {
+    margin: 0;
+    padding: 0;
+
+    list-style: none;
+}
+
+.source-item {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+
+    padding: 6px 0;
+
+    font-size: 0.88rem;
+    overflow-wrap: anywhere;
+}
+
+.source-item a {
+    color: #175cd3;
+    text-decoration: none;
+}
+
+.source-item a:hover {
+    text-decoration: underline;
+}
+
+.source-type {
+    flex-shrink: 0;
+
+    padding: 1px 8px;
+
+    border-radius: 999px;
+
+    background: #f2f4f7;
+    color: #475467;
+
+    font-size: 0.72rem;
+    font-weight: 600;
+}
+
+.source-type.web {
+    background: #eff8ff;
+    color: #175cd3;
+}
+
+.source-type.document {
+    background: #fef6ee;
+    color: #b93815;
+}
+
+.source-type.dataset {
+    background: #ecfdf3;
+    color: #067647;
+}
+
+.source-page {
+    color: #98a2b3;
+    font-size: 0.8rem;
+}

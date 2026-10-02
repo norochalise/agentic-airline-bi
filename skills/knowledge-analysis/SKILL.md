@@ -17,8 +17,11 @@ company documents, policies, reports, procedures, or other private knowledge.
 3. Retrieve the most relevant evidence.
 4. Verify that the evidence supports the answer.
 5. Identify missing or conflicting information.
-6. Produce a concise answer grounded in the retrieved evidence.
-7. Include source references when available.
+6. If the private evidence is insufficient, or the user asks whether a
+   document is still current, run one official web search as a fallback.
+7. Produce a concise answer grounded in the retrieved evidence.
+8. Include source references when available, separating private
+   documents from official web sources.
 
 ## Constraints
 

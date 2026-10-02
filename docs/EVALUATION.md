@@ -933,5 +933,12 @@ against these numbers; a regression blocks the phase.
 | Reranked retrieval (strict) | `python -m agentic_bi.evaluation.improved_retrieval_eval` | Hit@1 60%, Hit@3 90%, Hit@5 90%, MRR@5 0.750 |
 | Expanded-context coverage | (same) | 10/10 (100%) |
 
+Added with the official-web fallback (same date; all rows above re-run with
+no regression, pytest now 62/62):
+
+| Evaluation | Command | Result |
+|---|---|---|
+| Interaction routing incl. web conditions | `python -m agentic_bi.evaluation.interaction_routing_eval` | 15/15 (100%) |
+
 LLM-backed evaluations are non-deterministic; small run-to-run variation is
 possible and should be re-run before being treated as a regression.

@@ -34,6 +34,22 @@ Assistant.
 
 Classify the user's request into exactly one intent.
 
+LOCAL KNOWLEDGE (what the application can answer without the web)
+
+Documents:
+- Delta 2025 annual report (Form 10-K): strategy, financials, fleet,
+  workforce, business and operational risks.
+- Delta Customer Service Plan: customer commitments for delays,
+  cancellations, refunds, tarmac delays, accessibility, baggage handling.
+- Delta Domestic Contract of Carriage (plain-language, August 2026):
+  domestic carriage rules, refunds, schedule changes, denied boarding.
+- U.S. DOT Air Travel Consumer Report (September 2026, July 2026 data):
+  on-time performance, cancellations, complaints, mishandled baggage.
+
+Structured data:
+- Delta-marketed domestic flights for July 2026: delays, cancellations,
+  airports, routes, and delay causes.
+
 INTENTS
 
 conversation
@@ -58,20 +74,31 @@ airline_data
   "Show the airports with the most cancellations."
 
 airline_knowledge
-- Questions about airline policies, contracts, customer commitments,
-  financial documents, regulatory documents, or other information that
-  should be answered from the application's existing document knowledge base.
+- Questions whose topic is covered by the LOCAL KNOWLEDGE documents:
+  contract rules, customer commitments, Delta's annual report, or the
+  DOT consumer report.
 - Examples:
   "What does the contract say about refunds?"
   "What does the customer service plan say about delays?"
 
 current_airline_info
-- Airline questions that explicitly require current, live, latest, recent,
-  today, or up-to-date information from the web.
+- Airline questions that must be answered from official live web sources
+  (Delta and U.S. government sites such as DOT, FAA, and BTS).
+- Use it when ANY of these is true:
+  1. Freshness: the user asks for current, live, latest, recent, today,
+     now, or up-to-date information.
+  2. Not covered locally: the topic is outside LOCAL KNOWLEDGE, such as
+     bag fees, pet travel, SkyMiles, seat selection, travel waivers,
+     flight status, airline news, or current DOT/FAA rules.
+  3. Explicit request: the user asks to check the website or search
+     the web.
 - Examples:
   "What is the current baggage policy?"
-  "What does the airline website say about refunds today?"
-- This intent identifies the need for current information.
+  "Can I bring my dog in the cabin on Delta?"
+  "How do SkyMiles upgrades work?"
+  "What are the DOT rules for automatic refunds?"
+  "Check delta.com for the refund policy."
+- This intent identifies the need for live web information.
 - It does not perform web search itself.
 
 out_of_scope
@@ -94,9 +121,14 @@ IMPORTANT RULES
    Example: "Write a poem about Delta flights" is out_of_scope.
 4. Questions about how THIS application was built are app_info.
 5. Questions about how to build some unrelated application are out_of_scope.
-6. Use current_airline_info only when current/live web information is
-   actually required.
-7. Return only the requested structured classification.
+6. Use current_airline_info only when one of its three conditions holds.
+7. If the user names a LOCAL KNOWLEDGE document (for example "according
+   to the contract", "the 10-K", "the customer service plan", "the DOT
+   report"), choose airline_knowledge, even if the question also asks
+   whether it is still current. The main agent can verify it on the web.
+8. Questions that ask for metrics computed from the flight dataset are
+   airline_data, never current_airline_info.
+9. Return only the requested structured classification.
 """
 
 

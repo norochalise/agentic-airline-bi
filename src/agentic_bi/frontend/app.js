@@ -17,7 +17,12 @@ const knowledgeSearchCount = document.getElementById(
 const dataAnalysisCount = document.getElementById(
     "data-analysis-count"
 );
+const webSearchCount = document.getElementById(
+    "web-search-count"
+);
 const errorCount = document.getElementById("error-count");
+const sources = document.getElementById("sources");
+const sourceList = document.getElementById("source-list");
 const runId = document.getElementById("run-id");
 
 
@@ -68,13 +73,89 @@ function renderMarkdown(markdownText) {
 }
 
 
+const ROUTE_LABELS = {
+    current_airline_info: "official-web",
+    interaction_response: "direct-reply",
+};
+
+
+const SOURCE_LABELS = {
+    private_document: ["Document", "document"],
+    dataset: ["Dataset", "dataset"],
+    live_official_web: ["Web", "web"],
+};
+
+
+function isHttpUrl(value) {
+    try {
+        const url = new URL(value);
+
+        return url.protocol === "https:" || url.protocol === "http:";
+    } catch {
+        return false;
+    }
+}
+
+
+function renderSources(items) {
+    sourceList.replaceChildren();
+
+    if (!Array.isArray(items) || items.length === 0) {
+        sources.classList.add("hidden");
+        return;
+    }
+
+    for (const item of items) {
+        const row = document.createElement("li");
+        row.className = "source-item";
+
+        const [label, kind] = SOURCE_LABELS[item.source_type] ?? [
+            "Source",
+            "",
+        ];
+
+        const badge = document.createElement("span");
+        badge.className = `source-type ${kind}`.trim();
+        badge.textContent = label;
+        row.appendChild(badge);
+
+        if (item.url && isHttpUrl(item.url)) {
+            const link = document.createElement("a");
+            link.href = item.url;
+            link.target = "_blank";
+            link.rel = "noopener noreferrer";
+            link.textContent = item.title || item.url;
+            row.appendChild(link);
+        } else {
+            const title = document.createElement("span");
+            title.textContent = item.title;
+            row.appendChild(title);
+        }
+
+        if (item.page_number) {
+            const page = document.createElement("span");
+            page.className = "source-page";
+            page.textContent = `p. ${item.page_number}`;
+            row.appendChild(page);
+        }
+
+        sourceList.appendChild(row);
+    }
+
+    sources.classList.remove("hidden");
+}
+
+
 function displayResult(data) {
     answer.innerHTML = renderMarkdown(
         data.answer
     );
 
+    // Early-exit routes finish before skill routing, so no skill is selected.
     selectedSkill.textContent =
-        data.selected_skill ?? "—";
+        data.selected_skill ??
+        ROUTE_LABELS[data.stop_reason] ??
+        "—";
 
     stopReason.textContent =
         data.stop_reason ?? "—";
@@ -91,8 +172,13 @@ function displayResult(data) {
     dataAnalysisCount.textContent =
         data.data_analysis_count ?? 0;
 
+    webSearchCount.textContent =
+        data.web_search_count ?? 0;
+
     errorCount.textContent =
         data.error_count ?? 0;
+
+    renderSources(data.sources);
 
     runId.textContent =
         data.run_id ?? "—";

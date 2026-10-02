@@ -1,4 +1,4 @@
-"""Trusted live-web search restricted to official Delta web properties."""
+"""Trusted live-web search restricted to official Delta and U.S. government sites."""
 
 from __future__ import annotations
 
@@ -15,11 +15,14 @@ load_dotenv()
 
 ALLOWED_DOMAINS = (
     "delta.com",
+    "transportation.gov",
+    "faa.gov",
+    "bts.gov",
 )
 
 
 def _is_allowed_delta_url(url: str) -> bool:
-    """Return True only for delta.com or its subdomains."""
+    """Return True only for an allowed official domain or its subdomains."""
 
     try:
         hostname = urlparse(url).hostname
@@ -31,9 +34,10 @@ def _is_allowed_delta_url(url: str) -> bool:
 
     hostname = hostname.casefold()
 
-    return (
-        hostname == "delta.com"
-        or hostname.endswith(".delta.com")
+    return any(
+        hostname == domain
+        or hostname.endswith(f".{domain}")
+        for domain in ALLOWED_DOMAINS
     )
 
 
@@ -41,7 +45,7 @@ def search_delta_official_web(
     query: str,
     num_results: int = 3,
 ) -> dict[str, Any]:
-    """Search current official Delta information using Exa."""
+    """Search current official airline information using Exa."""
 
     query = query.strip()
 
@@ -62,9 +66,7 @@ def search_delta_official_web(
     response = exa.search_and_contents(
         query,
         num_results=num_results,
-        include_domains=[
-            "delta.com",
-        ],
+        include_domains=list(ALLOWED_DOMAINS),
         highlights=True,
     )
 

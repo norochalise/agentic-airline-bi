@@ -149,3 +149,58 @@ class OriginCancellationAnalysisOutput(BaseModel):
     )
 
     results: list[OriginCancellationResult]
+
+# -------------------------------------------------------------------
+# Official-web search schemas
+# -------------------------------------------------------------------
+
+class OfficialWebSearchArgs(BaseModel):
+    """
+    Validated arguments for official live-web search.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+        str_strip_whitespace=True,
+    )
+
+    query: str = Field(
+        min_length=3,
+        description="Focused query for official Delta and U.S. government sites.",
+    )
+
+
+class OfficialWebSearchResult(BaseModel):
+    """
+    One page returned from an allowed official domain.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+
+    title: str = Field(
+        min_length=1,
+    )
+
+    url: str = Field(
+        min_length=1,
+    )
+
+    highlights: list[str]
+
+
+class OfficialWebSearchOutput(BaseModel):
+    """
+    Validated output returned by the official-web search tool.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+
+    query: str = Field(
+        min_length=3,
+    )
+
+    results: list[OfficialWebSearchResult]

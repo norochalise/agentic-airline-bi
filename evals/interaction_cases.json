@@ -1,0 +1,92 @@
+[
+    {
+        "id": "web_fresh_001",
+        "question": "What is Delta's current baggage policy?",
+        "expected_intent": "current_airline_info",
+        "condition": "A1 freshness"
+    },
+    {
+        "id": "web_fresh_002",
+        "question": "What are the latest Delta travel waivers for this week?",
+        "expected_intent": "current_airline_info",
+        "condition": "A1 freshness"
+    },
+    {
+        "id": "web_gap_001",
+        "question": "Can I bring my dog in the cabin on a Delta flight?",
+        "expected_intent": "current_airline_info",
+        "condition": "A2 not covered locally"
+    },
+    {
+        "id": "web_gap_002",
+        "question": "How do SkyMiles upgrades work?",
+        "expected_intent": "current_airline_info",
+        "condition": "A2 not covered locally"
+    },
+    {
+        "id": "web_gap_003",
+        "question": "What are the DOT rules for automatic airline refunds?",
+        "expected_intent": "current_airline_info",
+        "condition": "A2 not covered locally"
+    },
+    {
+        "id": "web_explicit_001",
+        "question": "Check delta.com for the refund policy on non-refundable tickets.",
+        "expected_intent": "current_airline_info",
+        "condition": "A3 explicit request"
+    },
+    {
+        "id": "knowledge_001",
+        "question": "What does the customer service plan say about delays?",
+        "expected_intent": "airline_knowledge",
+        "condition": "covered document"
+    },
+    {
+        "id": "knowledge_002",
+        "question": "According to the contract of carriage, what happens when Delta changes my schedule?",
+        "expected_intent": "airline_knowledge",
+        "condition": "named document"
+    },
+    {
+        "id": "knowledge_003",
+        "question": "Does Delta's contract of carriage still say the same about refunds today?",
+        "expected_intent": "airline_knowledge",
+        "condition": "named document with freshness check"
+    },
+    {
+        "id": "knowledge_004",
+        "question": "What fuel-price risks does Delta describe in its 2025 10-K?",
+        "expected_intent": "airline_knowledge",
+        "condition": "named document"
+    },
+    {
+        "id": "data_001",
+        "question": "Which 3 origin airports have the highest cancellation rates among airports with at least 1000 flights?",
+        "expected_intent": "airline_data",
+        "condition": "dataset metric"
+    },
+    {
+        "id": "data_002",
+        "question": "Show the top 5 Delta origin airports by cancellation rate in July 2026.",
+        "expected_intent": "airline_data",
+        "condition": "dataset metric"
+    },
+    {
+        "id": "conversation_001",
+        "question": "Hello there!",
+        "expected_intent": "conversation",
+        "condition": "social"
+    },
+    {
+        "id": "app_info_001",
+        "question": "How does your RAG system work?",
+        "expected_intent": "app_info",
+        "condition": "about this app"
+    },
+    {
+        "id": "out_of_scope_001",
+        "question": "Write me a poem about Delta flights.",
+        "expected_intent": "out_of_scope",
+        "condition": "creative request"
+    }
+]

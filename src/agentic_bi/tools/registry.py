@@ -1,11 +1,16 @@
 from agentic_bi.core.schemas import (
     KnowledgeSearchArgs,
     KnowledgeSearchOutput,
+    OfficialWebSearchArgs,
+    OfficialWebSearchOutput,
     OriginCancellationAnalysisArgs,
     OriginCancellationAnalysisOutput,
 )
 from agentic_bi.mcp.tools import (
     analyze_top_origin_cancellation_rates_via_mcp,
+)
+from agentic_bi.tools.delta_official_web import (
+    search_delta_official_web,
 )
 from agentic_bi.tools.improved_knowledge_search import (
     search_private_knowledge_improved,
@@ -78,6 +83,36 @@ def run_knowledge_search(
     }
 
 
+def run_official_web_search(
+    query: str,
+) -> dict:
+    """
+    Search official Delta and U.S. government websites.
+
+    Returns only the fields covered by the tool output contract.
+    """
+
+    search_result = search_delta_official_web(
+        query=query,
+        num_results=3,
+    )
+
+    return {
+        "query": query,
+        "results": [
+            {
+                "title": result["title"],
+                "url": result["url"],
+                "highlights": [
+                    str(highlight)
+                    for highlight in result.get("highlights", [])
+                ],
+            }
+            for result in search_result.get("results", [])
+        ],
+    }
+
+
 # -------------------------------------------------------------------
 # Tool definitions exposed to the model
 # -------------------------------------------------------------------
@@ -142,7 +177,61 @@ TOOLS = [
         },
         "strict": True,
     },
+    {
+        "type": "function",
+        "name": "search_official_web",
+        "description": (
+            "Search current official Delta and U.S. government websites "
+            "(delta.com, transportation.gov, faa.gov, bts.gov). Use only "
+            "after search_private_knowledge when the private documents "
+            "do not cover a material part of the question, or when the "
+            "user asks whether a document is still current."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": (
+                        "Focused plain-language query describing the "
+                        "official information required."
+                    ),
+                },
+            },
+            "required": [
+                "query",
+            ],
+            "additionalProperties": False,
+        },
+        "strict": True,
+    },
 ]
+
+
+# Tools that may never be offered to a structured-data workflow.
+WEB_TOOL_NAMES = {
+    "search_official_web",
+}
+
+
+def get_tools_for_skill(
+    selected_skill: str | None,
+) -> list[dict]:
+    """
+    Return the tool definitions offered to the model for a skill.
+
+    Only knowledge-analysis may fall back to official web search.
+    Dataset metrics must come from deterministic tools only.
+    """
+
+    if selected_skill == "knowledge-analysis":
+        return TOOLS
+
+    return [
+        tool
+        for tool in TOOLS
+        if tool["name"] not in WEB_TOOL_NAMES
+    ]
 
 
 # -------------------------------------------------------------------
@@ -156,6 +245,9 @@ FUNCTIONS = {
 
     "analyze_top_origin_cancellation_rates":
         analyze_top_origin_cancellation_rates_via_mcp,
+
+    "search_official_web":
+        run_official_web_search,
 }
 
 
@@ -170,6 +262,9 @@ INPUT_SCHEMAS = {
 
     "analyze_top_origin_cancellation_rates":
         OriginCancellationAnalysisArgs,
+
+    "search_official_web":
+        OfficialWebSearchArgs,
 }
 
 
@@ -184,6 +279,9 @@ OUTPUT_SCHEMAS = {
 
     "analyze_top_origin_cancellation_rates":
         OriginCancellationAnalysisOutput,
+
+    "search_official_web":
+        OfficialWebSearchOutput,
 }
 
 
@@ -197,6 +295,9 @@ TOOL_POLICIES = {
         "max_attempts": 1,
     },
     "analyze_top_origin_cancellation_rates": {
+        "max_attempts": 2,
+    },
+    "search_official_web": {
         "max_attempts": 2,
     },
 }

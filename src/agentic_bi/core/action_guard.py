@@ -10,6 +10,10 @@ TOOL_ACCESS_POLICIES = {
         "access": "read",
         "requires_approval": False,
     },
+    "search_official_web": {
+        "access": "read",
+        "requires_approval": False,
+    },
     "issue_customer_credit": {
         "access": "write",
         "requires_approval": True,

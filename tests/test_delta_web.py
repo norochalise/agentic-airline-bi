@@ -26,6 +26,9 @@ from agentic_bi.tools.delta_official_web import (
         "https://delta.com/us/en/baggage/overview",
         "https://www.delta.com/us/en/baggage/overview",
         "https://news.delta.com/example",
+        "https://www.transportation.gov/airconsumer/refunds",
+        "https://www.faa.gov/travelers",
+        "https://www.bts.gov/topics/airlines-and-airports",
     ],
 )
 def test_allowed_delta_urls_are_accepted(url):
@@ -39,6 +42,9 @@ def test_allowed_delta_urls_are_accepted(url):
         "https://delta.com.example.com/fake",
         "https://notdelta.com/",
         "https://google.com/",
+        "https://transportation.gov.evil.com/refunds",
+        "https://faketransportation.gov/",
+        "https://faa.gov.example.com/",
     ],
 )
 def test_non_delta_urls_are_rejected(url):
@@ -169,7 +175,10 @@ def test_search_delta_official_web_filters_non_delta_results(
     assert exa.last_kwargs["num_results"] == 3
 
     assert exa.last_kwargs["include_domains"] == [
-        "delta.com"
+        "delta.com",
+        "transportation.gov",
+        "faa.gov",
+        "bts.gov",
     ]
 
     assert exa.last_kwargs["highlights"] is True
@@ -289,6 +298,7 @@ def test_current_info_uses_retrieved_evidence_and_preserves_sources(
 
     assert result["sources"] == [
         {
+            "source_type": "live_official_web",
             "title": (
                 "Baggage Policy and Fees | "
                 "Delta Air Lines"
@@ -345,8 +355,8 @@ def test_current_info_returns_safe_fallback_when_no_results(
     assert (
         result["answer"]
         == (
-            "I could not verify this from the current "
-            "official Delta website."
+            "I could not verify this from current official "
+            "Delta or U.S. government websites."
         )
     )
 

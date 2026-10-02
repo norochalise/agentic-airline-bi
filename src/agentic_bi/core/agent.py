@@ -37,7 +37,7 @@ from agentic_bi.tools.registry import (
     INPUT_SCHEMAS,
     OUTPUT_SCHEMAS,
     TOOL_POLICIES,
-    TOOLS,
+    get_tools_for_skill,
 )
 
 
@@ -48,6 +48,14 @@ MAX_STEPS = 4
 MAX_TOOL_CALLS = 4
 MAX_KNOWLEDGE_SEARCHES = 2
 MAX_DATA_ANALYSIS_CALLS = 1
+MAX_WEB_SEARCHES = 1
+
+WEB_SEARCH_TOOL = "search_official_web"
+
+INTENT_TO_SKILL = {
+    "airline_knowledge": "knowledge-analysis",
+    "airline_data": "data-analysis",
+}
 
 
 @dataclass
@@ -168,6 +176,38 @@ def _collect_sources(
                             page_number,
                         "url":
                             None,
+                    }
+                )
+
+    if selected_skill == "knowledge-analysis":
+        seen_urls: set[str] = set()
+
+        for observation in observations:
+            if observation.get("tool") != WEB_SEARCH_TOOL:
+                continue
+
+            result = observation.get("result", {})
+
+            if not isinstance(result, dict):
+                continue
+
+            for page in result.get("results", []):
+                if not isinstance(page, dict):
+                    continue
+
+                url = page.get("url")
+
+                if not url or url in seen_urls:
+                    continue
+
+                seen_urls.add(url)
+
+                sources.append(
+                    {
+                        "source_type": "live_official_web",
+                        "title": str(page.get("title") or url),
+                        "page_number": None,
+                        "url": url,
                     }
                 )
 
@@ -418,14 +458,26 @@ def run_agent(
     # Skill selection
     # ---------------------------------------------------------------
 
-    state.selected_skill = select_skill(
-        state.goal
+    # The interaction router already decided data vs. documents.
+    # The keyword router is only a fallback for unmapped intents.
+    state.selected_skill = INTENT_TO_SKILL.get(
+        interaction.intent
     )
+
+    skill_source = "interaction_router"
+
+    if state.selected_skill is None:
+        state.selected_skill = select_skill(
+            state.goal
+        )
+
+        skill_source = "keyword_router"
 
     add_event(
         trace,
         "skill_selected",
         skill=state.selected_skill,
+        source=skill_source,
     )
 
     skill_content = ""
@@ -458,6 +510,17 @@ def run_agent(
 
     knowledge_search_count = 0
     data_analysis_count = 0
+    web_search_count = 0
+
+    # Web search is offered only to knowledge-analysis.
+    tools = get_tools_for_skill(
+        state.selected_skill
+    )
+
+    allowed_tool_names = {
+        tool["name"]
+        for tool in tools
+    }
 
     # ---------------------------------------------------------------
     # Initial model decision
@@ -467,7 +530,7 @@ def run_agent(
         model=os.environ["OPENAI_MODEL"],
         input=state.goal,
         instructions=instructions,
-        tools=TOOLS,
+        tools=tools,
     )
 
     # ---------------------------------------------------------------
@@ -499,6 +562,11 @@ def run_agent(
 
         tool_outputs = []
 
+        # Web fallback requires private evidence from an earlier step.
+        knowledge_searches_before_step = (
+            knowledge_search_count
+        )
+
         # -----------------------------------------------------------
         # Process tool calls
         # -----------------------------------------------------------
@@ -528,7 +596,10 @@ def run_agent(
             # Tool allowlist
             # -------------------------------------------------------
 
-            if item.name not in FUNCTIONS:
+            if (
+                item.name not in FUNCTIONS
+                or item.name not in allowed_tool_names
+            ):
 
                 state.stop_reason = (
                     "blocked_unknown_tool"
@@ -735,8 +806,85 @@ def run_agent(
                 break
 
             # -------------------------------------------------------
+            # Web fallback: private documents first
+            # -------------------------------------------------------
+
+            if (
+                item.name == WEB_SEARCH_TOOL
+                and knowledge_searches_before_step == 0
+            ):
+
+                error_info = {
+                    "tool": item.name,
+                    "arguments": arguments,
+                    "error_type": "web_before_private_search",
+                    "error": (
+                        "Official web search is only allowed after "
+                        "private knowledge has been searched."
+                    ),
+                }
+
+                state.errors.append(
+                    error_info
+                )
+
+                state.tool_history.append(
+                    error_info
+                )
+
+                add_event(
+                    trace,
+                    "guard_triggered",
+                    guard="web_before_private_search",
+                    tool=item.name,
+                    step=state.step_count,
+                )
+
+                tool_outputs.append(
+                    {
+                        "type": "function_call_output",
+                        "call_id": item.call_id,
+                        "output": json.dumps(
+                            {
+                                "status": "error",
+                                "error_type":
+                                    "web_before_private_search",
+                                "message": (
+                                    "Search the private knowledge "
+                                    "base first. Use official web "
+                                    "search only if that evidence "
+                                    "is insufficient."
+                                ),
+                            }
+                        ),
+                    }
+                )
+
+                continue
+
+            # -------------------------------------------------------
             # Per-tool budgets
             # -------------------------------------------------------
+
+            if (
+                item.name == WEB_SEARCH_TOOL
+                and web_search_count
+                >= MAX_WEB_SEARCHES
+            ):
+
+                state.stop_reason = (
+                    "web_search_budget_exceeded"
+                )
+
+                add_event(
+                    trace,
+                    "guard_triggered",
+                    guard="web_search_budget",
+                    tool=item.name,
+                    step=state.step_count,
+                )
+
+                break
 
             if (
                 item.name
@@ -801,6 +949,9 @@ def run_agent(
                 == "analyze_top_origin_cancellation_rates"
             ):
                 data_analysis_count += 1
+
+            elif item.name == WEB_SEARCH_TOOL:
+                web_search_count += 1
 
             if verbose:
 
@@ -1108,8 +1259,12 @@ def run_agent(
             (
                 state.selected_skill
                 == "knowledge-analysis"
-                and knowledge_search_count
-                >= MAX_KNOWLEDGE_SEARCHES
+                and (
+                    knowledge_search_count
+                    >= MAX_KNOWLEDGE_SEARCHES
+                    or web_search_count
+                    >= MAX_WEB_SEARCHES
+                )
             )
             or
             (
@@ -1158,7 +1313,7 @@ def run_agent(
             previous_response_id=response.id,
             input=tool_outputs,
             instructions=instructions,
-            tools=TOOLS,
+            tools=tools,
         )
 
     # ---------------------------------------------------------------
@@ -1249,7 +1404,7 @@ def run_agent(
             knowledge_search_count,
         data_analysis_count=
             data_analysis_count,
-        web_search_count=0,
+        web_search_count=web_search_count,
         sources=sources,
         tool_history=list(
             state.tool_history
