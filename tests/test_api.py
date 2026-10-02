@@ -92,3 +92,63 @@ def test_frontend_assets_require_revalidation():
         response = client.get(path)
 
         assert response.headers["cache-control"] == "no-cache"
+
+
+def test_ask_rejects_whitespace_only_question():
+    response = client.post("/ask", json={"question": "   "})
+
+    assert response.status_code == 422
+
+
+def test_ask_rejects_overlong_question():
+    response = client.post("/ask", json={"question": "x" * 2001})
+
+    assert response.status_code == 422
+    assert "2000" in response.json()["detail"][0]["msg"]
+
+
+def test_agent_failure_returns_a_clean_error_without_internals():
+    with patch(
+        "agentic_bi.api.app.run_agent",
+        side_effect=RuntimeError("secret stack detail: sk-test-key"),
+    ):
+        response = client.post("/ask", json={"question": "Top airport?"})
+
+    assert response.status_code == 500
+
+    body = response.json()
+    assert body["error_id"]
+    assert body["error_id"] in body["detail"]
+    assert "secret" not in body["detail"]
+    assert "sk-test-key" not in response.text
+
+
+def test_missing_configuration_returns_503():
+    from agentic_bi.config import ConfigError
+
+    with patch(
+        "agentic_bi.api.app.run_agent",
+        side_effect=ConfigError("OPENAI_MODEL is not configured."),
+    ):
+        response = client.post("/ask", json={"question": "Top airport?"})
+
+    assert response.status_code == 503
+    assert "not configured" in response.json()["detail"]
+
+
+def test_startup_warms_up_models_unless_disabled(monkeypatch):
+    import agentic_bi.api.app as app_module
+
+    calls = []
+    monkeypatch.setattr(app_module, "validate_settings", lambda: None)
+    monkeypatch.setattr(app_module, "warm_up_tools", lambda: calls.append(1) or {})
+
+    monkeypatch.setenv("WARM_UP_ON_STARTUP", "true")
+    with TestClient(app):
+        pass
+
+    monkeypatch.setenv("WARM_UP_ON_STARTUP", "false")
+    with TestClient(app):
+        pass
+
+    assert calls == [1]

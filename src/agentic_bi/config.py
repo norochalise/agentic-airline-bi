@@ -125,6 +125,17 @@ def max_saved_runs() -> int:
     return limit
 
 
+def warm_up_on_startup() -> bool:
+    """Whether the API loads models and data before serving requests."""
+
+    return os.getenv("WARM_UP_ON_STARTUP", "true").strip().casefold() not in (
+        "0",
+        "false",
+        "no",
+        "off",
+    )
+
+
 def missing_settings(names: tuple[str, ...] = REQUIRED_SETTINGS) -> list[str]:
     """Return the names in `names` that are not set."""
 

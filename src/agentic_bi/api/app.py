@@ -2,31 +2,39 @@
 
 import logging
 from contextlib import asynccontextmanager
+from uuid import uuid4
 
 from fastapi import FastAPI
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from agentic_bi.api.schemas import AskRequest, AskResponse
 from agentic_bi.config import (
     FRONTEND_DIR,
     OPTIONAL_SETTINGS,
+    ConfigError,
     missing_settings,
     validate_settings,
+    warm_up_on_startup,
 )
 from agentic_bi.core.agent import run_agent
+from agentic_bi.tools.warmup import warm_up_tools
 
 logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Refuse to start without the required settings."""
+    """Check settings, then load models so the first question is fast."""
 
     validate_settings()
 
     for name in missing_settings(OPTIONAL_SETTINGS):
         logger.warning("%s is not set; official-web answers will fail.", name)
+
+    if warm_up_on_startup():
+        for name, seconds in warm_up_tools().items():
+            logger.info("Loaded %s in %.1fs", name, seconds)
 
     yield
 
@@ -93,14 +101,40 @@ def health() -> dict[str, str]:
 # ---------------------------------------------------------------------------
 
 
-@app.post("/ask", response_model=AskResponse)
-def ask_agent(request: AskRequest) -> AskResponse:
+def _error_response(status_code: int, message: str, error_id: str) -> JSONResponse:
+    return JSONResponse(
+        status_code=status_code,
+        content={"detail": f"{message} (reference {error_id})", "error_id": error_id},
+    )
+
+
+@app.post(
+    "/ask",
+    response_model=AskResponse,
+    responses={500: {"description": "The agent failed; see error_id in the logs."}},
+)
+def ask_agent(request: AskRequest) -> AskResponse | JSONResponse:
     """Run the BI agent for a user question."""
 
-    result = run_agent(question=request.question, verbose=False)
+    error_id = uuid4().hex[:12]
+
+    try:
+        result = run_agent(question=request.question, verbose=False)
+
+    except ConfigError as exc:
+        logger.error("Configuration error [%s]: %s", error_id, exc)
+        return _error_response(503, "The service is not configured.", error_id)
+
+    except Exception:
+        # Full details go to the server log, never to the client.
+        logger.exception("Agent run failed [%s]", error_id)
+        return _error_response(
+            500, "Something went wrong while answering. Please try again.", error_id
+        )
 
     if result.trace is None:
-        raise RuntimeError("Agent execution completed without a trace.")
+        logger.error("Agent run finished without a trace [%s]", error_id)
+        return _error_response(500, "The answer could not be recorded.", error_id)
 
     return AskResponse(
         answer=result.final_answer,

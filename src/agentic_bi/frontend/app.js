@@ -346,11 +346,12 @@ async function readErrorMessage(response) {
     try {
         const errorData = await response.json();
 
-        if (errorData.detail) {
-            message =
-                typeof errorData.detail === "string"
-                    ? errorData.detail
-                    : JSON.stringify(errorData.detail);
+        if (typeof errorData.detail === "string") {
+            message = errorData.detail;
+        } else if (Array.isArray(errorData.detail) && errorData.detail[0]?.msg) {
+            // FastAPI validation errors: show the first reason, e.g. a
+            // question that is too long.
+            message = errorData.detail[0].msg;
         }
     } catch {
         // Keep the default message.

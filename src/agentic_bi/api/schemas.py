@@ -1,4 +1,7 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
+
+# Matches the composer's maxlength; bounds the cost of a single request.
+MAX_QUESTION_LENGTH = 2000
 
 
 class AskRequest(BaseModel):
@@ -6,9 +9,12 @@ class AskRequest(BaseModel):
     Request body for the agent API.
     """
 
+    model_config = ConfigDict(str_strip_whitespace=True)
+
     question: str = Field(
         ...,
         min_length=1,
+        max_length=MAX_QUESTION_LENGTH,
         description=("Business question to send to the Delta BI agent."),
         examples=[
             (
