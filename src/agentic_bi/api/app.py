@@ -8,6 +8,7 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+from agentic_bi.api.charts import build_charts
 from agentic_bi.api.schemas import AskRequest, AskResponse
 from agentic_bi.config import (
     FRONTEND_DIR,
@@ -148,4 +149,5 @@ def ask_agent(request: AskRequest) -> AskResponse | JSONResponse:
         web_search_count=result.web_search_count,
         error_count=len(result.errors),
         sources=result.sources,
+        charts=build_charts(result.observations),
     )

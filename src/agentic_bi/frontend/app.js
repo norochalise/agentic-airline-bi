@@ -212,6 +212,139 @@ function renderSources(items) {
 
 
 // -------------------------------------------------------------------
+// Charts
+// -------------------------------------------------------------------
+
+const UNIT_FORMATS = {
+    percent: (value) => `${value.toFixed(1)}%`,
+    minutes: (value) => `${value.toFixed(1)} min`,
+    flights: (value) => Math.round(value).toLocaleString(),
+};
+
+
+function formatValue(value, unit) {
+    return (UNIT_FORMATS[unit] ?? String)(value);
+}
+
+
+function renderChartTable(spec) {
+    const table = element("table", "chart-table");
+    const head = table.createTHead().insertRow();
+
+    head.appendChild(element("th", "", spec.label_header));
+    head.appendChild(element("th", "num", spec.value_header));
+    head.appendChild(element("th", "", "Detail"));
+
+    const body = table.createTBody();
+
+    for (const row of spec.rows) {
+        const tr = body.insertRow();
+        tr.appendChild(element("td", "", row.label));
+        tr.appendChild(element("td", "num", formatValue(row.value, spec.unit)));
+        tr.appendChild(element("td", "", row.detail ?? ""));
+    }
+
+    return table;
+}
+
+
+function renderChart(spec) {
+    const figure = element("figure", "chart");
+
+    // Header: title and subtitle (one series, so the title replaces a legend).
+    const head = element("div", "chart-head");
+    const caption = element("figcaption");
+    caption.appendChild(element("div", "chart-title", spec.title));
+
+    if (spec.subtitle) {
+        caption.appendChild(element("div", "chart-subtitle", spec.subtitle));
+    }
+
+    const toggle = element("button", "chart-toggle", "Table");
+    toggle.type = "button";
+    toggle.setAttribute("aria-pressed", "false");
+
+    head.append(caption, toggle);
+    figure.appendChild(head);
+
+    // Bars, scaled to the largest value; every bar's value sits at its tip.
+    const bars = element("ul", "chart-bars");
+    const largest = Math.max(...spec.rows.map((row) => row.value), 0) || 1;
+
+    const tooltip = element("div", "chart-tooltip hidden");
+    tooltip.setAttribute("role", "status");
+
+    for (const row of spec.rows) {
+        const item = element("li", "chart-row");
+        const valueText = formatValue(row.value, spec.unit);
+
+        const label = element("span", "chart-label", row.label);
+        label.title = row.label;
+
+        const track = element("div", "chart-track");
+        track.tabIndex = 0;
+        track.setAttribute(
+            "aria-label",
+            `${row.label}: ${valueText}${row.detail ? `, ${row.detail}` : ""}`
+        );
+
+        const bar = element("div", "chart-bar");
+        bar.style.setProperty("--ratio", Math.max(row.value, 0) / largest);
+
+        track.append(bar, element("span", "chart-value", valueText));
+
+        const show = (event) => {
+            tooltip.replaceChildren(
+                element("strong", "", valueText),
+                element("span", "", row.detail ? `${row.label} · ${row.detail}` : row.label)
+            );
+            tooltip.classList.remove("hidden");
+
+            const box = figure.getBoundingClientRect();
+            const anchor = event.type === "focus"
+                ? bar.getBoundingClientRect()
+                : { right: event.clientX, top: event.clientY };
+
+            const left = Math.min(
+                anchor.right - box.left + 12,
+                box.width - tooltip.offsetWidth - 8
+            );
+
+            tooltip.style.left = `${Math.max(left, 8)}px`;
+            tooltip.style.top = `${anchor.top - box.top - tooltip.offsetHeight - 6}px`;
+        };
+
+        const hide = () => tooltip.classList.add("hidden");
+
+        track.addEventListener("pointermove", show);
+        track.addEventListener("focus", show);
+        track.addEventListener("pointerleave", hide);
+        track.addEventListener("blur", hide);
+
+        item.append(label, track);
+        bars.appendChild(item);
+    }
+
+    const table = renderChartTable(spec);
+    table.classList.add("hidden");
+
+    toggle.addEventListener("click", () => {
+        const showTable = table.classList.contains("hidden");
+
+        table.classList.toggle("hidden", !showTable);
+        bars.classList.toggle("hidden", showTable);
+        toggle.textContent = showTable ? "Chart" : "Table";
+        toggle.setAttribute("aria-pressed", String(showTable));
+        tooltip.classList.add("hidden");
+    });
+
+    figure.append(bars, table, tooltip);
+
+    return figure;
+}
+
+
+// -------------------------------------------------------------------
 // Run details
 // -------------------------------------------------------------------
 
@@ -320,6 +453,10 @@ function addAssistantMessage() {
 
 function fillAssistantMessage(body, data, elapsedSeconds) {
     body.replaceChildren(renderMarkdown(data.answer));
+
+    for (const spec of data.charts ?? []) {
+        body.appendChild(renderChart(spec));
+    }
 
     const sources = renderSources(data.sources);
 

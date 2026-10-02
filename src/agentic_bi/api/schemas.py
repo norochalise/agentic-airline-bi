@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field
 
 # Matches the composer's maxlength; bounds the cost of a single request.
@@ -40,6 +42,32 @@ class SourceReference(BaseModel):
     url: str | None = None
 
 
+class ChartRow(BaseModel):
+    """One bar: a label, its value and a short supporting detail."""
+
+    label: str
+
+    value: float
+
+    detail: str | None = None
+
+
+class ChartSpec(BaseModel):
+    """A ranked bar chart built from a deterministic data-tool result."""
+
+    title: str
+
+    subtitle: str | None = None
+
+    unit: Literal["percent", "minutes", "flights"]
+
+    label_header: str
+
+    value_header: str
+
+    rows: list[ChartRow]
+
+
 class AskResponse(BaseModel):
     """
     Structured response returned by the agent API.
@@ -66,3 +94,5 @@ class AskResponse(BaseModel):
     error_count: int
 
     sources: list[SourceReference] = Field(default_factory=list)
+
+    charts: list[ChartSpec] = Field(default_factory=list)

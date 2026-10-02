@@ -677,6 +677,190 @@ textarea {
 
 
 /* =========================================================
+   Charts (ranked horizontal bars; one series, so no legend)
+========================================================= */
+
+.chart {
+    position: relative;
+
+    margin: 14px 0 0;
+    padding: 14px 16px 12px;
+
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--surface);
+}
+
+.chart-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+
+    margin-bottom: 12px;
+}
+
+.chart-title {
+    font-size: 0.9rem;
+    font-weight: 600;
+}
+
+.chart-subtitle {
+    margin-top: 2px;
+
+    color: var(--text-muted);
+    font-size: 0.78rem;
+}
+
+.chart-toggle {
+    flex-shrink: 0;
+
+    padding: 3px 10px;
+
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: transparent;
+    color: var(--text-muted);
+
+    font: inherit;
+    font-size: 0.75rem;
+    cursor: pointer;
+}
+
+.chart-toggle:hover,
+.chart-toggle[aria-pressed="true"] {
+    border-color: var(--border-strong);
+    color: var(--text);
+}
+
+.chart-bars {
+    display: grid;
+    grid-template-columns: minmax(0, max-content) minmax(0, 1fr);
+    align-items: center;
+    row-gap: 4px;
+    column-gap: 10px;
+
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.chart-row {
+    display: contents;
+}
+
+.chart-label {
+    max-width: 14rem;
+    overflow: hidden;
+
+    color: var(--text-muted);
+    font-size: 0.8rem;
+    text-align: right;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* The track is the hit target: taller than the bar, full row width. */
+.chart-track {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+
+    min-height: 26px;
+
+    border-left: 1px solid var(--border-strong);
+    border-radius: 0 4px 4px 0;
+    outline: none;
+    cursor: default;
+}
+
+.chart-track:focus-visible {
+    box-shadow: 0 0 0 2px var(--accent-soft), 0 0 0 3px var(--accent);
+}
+
+.chart-bar {
+    /* --ratio is value / largest value; the value label keeps 4.5rem. */
+    width: calc((100% - 4.5rem) * var(--ratio));
+    min-width: 2px;
+    height: 16px;
+
+    border-radius: 0 4px 4px 0;
+    background: var(--accent);
+
+    transition: filter 120ms ease;
+}
+
+.chart-track:hover .chart-bar,
+.chart-track:focus-visible .chart-bar {
+    filter: brightness(1.15);
+}
+
+.chart-value {
+    color: var(--text);
+    font-size: 0.8rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.chart-tooltip {
+    position: absolute;
+    z-index: 2;
+
+    padding: 6px 10px;
+
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface);
+    box-shadow: var(--shadow-md);
+
+    font-size: 0.78rem;
+    pointer-events: none;
+    white-space: nowrap;
+}
+
+.chart-tooltip strong {
+    display: block;
+    color: var(--text);
+    font-size: 0.85rem;
+}
+
+.chart-tooltip span {
+    color: var(--text-muted);
+}
+
+.chart-table {
+    width: 100%;
+    border-collapse: collapse;
+
+    font-size: 0.82rem;
+}
+
+.chart-table th,
+.chart-table td {
+    padding: 6px 8px;
+
+    border-bottom: 1px solid var(--border);
+    text-align: left;
+}
+
+.chart-table th {
+    color: var(--text-muted);
+    font-weight: 600;
+}
+
+.chart-table td.num,
+.chart-table th.num {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+.chart-table tr:last-child td {
+    border-bottom: 0;
+}
+
+
+/* =========================================================
    Sources
 ========================================================= */
 
@@ -971,6 +1155,14 @@ a.source-chip:hover {
 
     .run-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .chart {
+        padding: 12px;
+    }
+
+    .chart-label {
+        max-width: 7rem;
     }
 }
 
