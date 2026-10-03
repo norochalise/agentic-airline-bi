@@ -68,6 +68,8 @@ src = ["src", "tests", "scripts"]
 [tool.ruff.format]
 # Collapse short calls that were split one argument per line.
 skip-magic-trailing-comma = true
+# Code blocks in the docs are illustrations; keep their hand alignment.
+exclude = ["*.md"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP"]
