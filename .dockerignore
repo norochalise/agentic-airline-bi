@@ -18,5 +18,6 @@ data/feedback
 # Not needed to run the app.
 tests
 docs
+notebooks
 scripts
 REFACTOR_PLAN.md

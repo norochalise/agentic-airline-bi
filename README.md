@@ -206,6 +206,7 @@ skills/         per-skill instructions given to the agent
 evals/          frozen evaluation cases and retrieval labels
 scripts/        index-building scripts
 docs/           architecture, evaluation, development story, images
+notebooks/      concept notebook
 ```
 
 ## Design decisions
@@ -235,6 +236,8 @@ docs/           architecture, evaluation, development story, images
 
 ## Documentation
 
+- [Contributing](CONTRIBUTING.md): setup, checks, evaluations and conventions
+- [Concept notebook](notebooks/agentic_airline_bi_concepts.ipynb): the core ideas with runnable code
 - [Architecture](docs/ARCHITECTURE.md): components, boundaries, execution flow
 - [Evaluation](docs/EVALUATION.md): datasets, metrics, failure analysis, baseline
 - [Development story](docs/DEVELOPMENT.md): how the system evolved
