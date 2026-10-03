@@ -4,6 +4,7 @@
 
 **A bounded, observable AI agent that answers airline business questions:<br/>deterministic tools calculate, retrieval supplies the evidence, and the LLM decides and explains.**
 
+[![CI](https://github.com/norochalise/agentic-airline-bi/actions/workflows/ci.yml/badge.svg)](https://github.com/norochalise/agentic-airline-bi/actions/workflows/ci.yml)
 ![Python 3.13](https://img.shields.io/badge/Python-3.13-3776AB?logo=python&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-API%20%2B%20SSE-009688?logo=fastapi&logoColor=white)
 ![OpenAI](https://img.shields.io/badge/OpenAI-Responses%20API-412991?logo=openai&logoColor=white)
@@ -135,6 +136,8 @@ The 193 `pytest` tests make no paid API calls. Methodology: [`docs/EVALUATION.md
 **Requirements:** Python 3.13+ and [`uv`](https://docs.astral.sh/uv/), plus an OpenAI API key (and an Exa key for web answers).
 
 ```powershell
+git clone https://github.com/norochalise/agentic-airline-bi.git
+cd agentic-airline-bi
 uv sync
 copy .env.example .env      # then fill in your keys
 uv run abi-serve            # http://127.0.0.1:8000  (API docs at /docs)
