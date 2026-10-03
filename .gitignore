@@ -16,3 +16,6 @@ REFACTOR_PLAN.md
 htmlcov/
 # Reader feedback on answers
 data/feedback/
+
+# Raw screen recordings; the optimized copies live in docs/images/
+/images/

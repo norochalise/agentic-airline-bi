@@ -18,7 +18,7 @@ WORKDIR /app
 
 # 1. Dependencies only: this layer is reused until pyproject.toml or
 #    uv.lock change. On Linux, torch comes from the CPU-only index.
-COPY pyproject.toml uv.lock README.md ./
+COPY pyproject.toml uv.lock README.md LICENSE ./
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev --no-install-project
 

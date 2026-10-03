@@ -1,6 +1,6 @@
 # Architecture
 
-How the Airline Intelligence Assistant is put together, and why.
+How the Airline Intelligence Assistant is put together, and why. To see it running, look at the demo and screenshots in the [README](../README.md#screenshots).
 
 The design follows one rule:
 
@@ -271,7 +271,7 @@ Every run produces a structured trace (`core/observability.py`) with a run ID, t
 - `tool_started` / `tool_completed`, `guard_triggered`
 - `checkpoint_saved`, `agent_finished`
 
-**Usage and latency.** `run_agent` wraps the OpenAI client in a `MeteredClient` (`core/usage.py`), so every `responses.create` call is timed and its token usage recorded, with no change to the call sites. Calls are grouped by stage (`follow-up`, `routing`, `web answer`, `agent`). `finish_run` adds tool time from the `tool_completed` events and stores the summary on `AgentTrace.usage` and `AgentResult.usage`: tokens in, cached and out, model calls, model, tool and total seconds, and an estimated cost when `OPENAI_INPUT_PRICE_PER_M` and `OPENAI_OUTPUT_PRICE_PER_M` are set. Prices are settings because they change and the model is configurable. Exa searches are counted, not priced.
+**Usage and latency.** `run_agent` wraps the OpenAI client in a `MeteredClient` (`core/usage.py`), so every `responses.create` call is timed and its token usage recorded, with no change to the call sites. Calls are grouped by stage (`follow-up`, `routing`, `web answer`, `agent`). `finish_run` adds tool time from the `tool_completed` events (and, for official-web answers, the search time recorded on `current_airline_info_retrieved`) and stores the summary on `AgentTrace.usage` and `AgentResult.usage`: tokens in, cached and out, model calls, model, tool and total seconds, and an estimated cost when `OPENAI_INPUT_PRICE_PER_M` and `OPENAI_OUTPUT_PRICE_PER_M` are set. Prices are settings because they change and the model is configurable. Exa searches are counted, not priced.
 
 Application-state checkpoints are saved after each successful tool observation and at the end. `restore_agent_state` rebuilds `AgentState`. This restores application state; it is not durable resumption of an interrupted model conversation.
 

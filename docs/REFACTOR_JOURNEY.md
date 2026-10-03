@@ -225,6 +225,10 @@ A short log of how the Airline Intelligence Assistant went from "broken after a 
 - Prices are settings, not a table in the code: model prices change, and the model is configurable. Without prices, the UI shows tokens only.
 - The run details panel shows a "where the time went" bar. It usually shows that model calls, not pandas or retrieval, dominate the wait.
 
+**Presentation.** A recorded demo, screenshots, a rewritten README with highlights, a tech-stack table and a roadmap, and an MIT license.
+- The 14.8 MB, 3½-minute screen recording became a 7.9 MB GIF for the README: 960 px wide, 2× speed, with a custom palette so the text stays sharp. The full recording is kept as a 5 MB MP4.
+- **Screenshots find bugs.** One screenshot showed "Tool time 0.0s" on a web answer. The official-web path runs its Exa search outside the tool loop, so the search time was counted as "other". The search is now timed and counted as tool time, with a test.
+
 **A CI trap found on the way.** Ruff 0.16 also formats Python code blocks inside markdown. It would have rewrapped the hand-aligned `ToolSpec` example in `ARCHITECTURE.md` and failed `ruff format --check` on the first push. Markdown is now excluded from the formatter.
 
 ---

@@ -30,7 +30,7 @@ How the assistant is measured, what the numbers are, and what they do and don't 
 | Flight analytics | `uv run abi-eval-analytics` | 8 | Skill, tool and key arguments for the analytics tools | paid |
 | Retrieval (FAISS) | `uv run abi-eval-retrieval` | 10 | Hit@K and MRR against verified chunk labels | free |
 | Retrieval (reranked) | `uv run abi-eval-reranked` | 10 | FAISS vs reranked on strict labels, plus context coverage | free |
-| Software | `uv run pytest` | 192 tests | Deterministic contracts, fake clients | free |
+| Software | `uv run pytest` | 193 tests | Deterministic contracts, fake clients | free |
 
 The case files live in `evals/`:
 - `agent_cases.json`
@@ -203,7 +203,7 @@ The October 2026 refactor (see [`REFACTOR_JOURNEY.md`](REFACTOR_JOURNEY.md)) was
 
 ## 10. Software tests
 
-`uv run pytest` runs 192 tests in about 3 seconds, with no API keys. CI runs the same suite on every push.
+`uv run pytest` runs 193 tests in about 3 seconds, with no API keys. CI runs the same suite on every push.
 
 | Area | Examples |
 |---|---|
