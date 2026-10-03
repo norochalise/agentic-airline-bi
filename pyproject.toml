@@ -58,6 +58,14 @@ dev = [
     "pytest-cov>=7.1.0",
     "ruff>=0.16.10",
 ]
+# Concept notebook (notebooks/): uv sync --group notebook
+notebook = [
+    "ipykernel",
+    "jupyterlab",
+    "matplotlib",
+    "nbclient",
+    "nbformat",
+]
 
 [tool.pytest.ini_options]
 addopts = "--basetemp=.pytest_tmp"
