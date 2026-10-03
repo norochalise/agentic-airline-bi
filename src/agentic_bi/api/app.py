@@ -2,23 +2,27 @@
 
 import json
 import logging
+import math
 import queue
 import threading
 from contextlib import asynccontextmanager
 from uuid import uuid4
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from agentic_bi.api.charts import build_charts
 from agentic_bi.api.progress import progress_message
+from agentic_bi.api.rate_limit import SlidingWindowLimiter
 from agentic_bi.api.schemas import AskRequest, AskResponse, FeedbackRequest
 from agentic_bi.config import (
     FEEDBACK_PATH,
     FRONTEND_DIR,
     OPTIONAL_SETTINGS,
     ConfigError,
+    ask_daily_limit,
+    ask_rate_limit,
     missing_settings,
     validate_settings,
     warm_up_on_startup,
@@ -163,16 +167,55 @@ def _answer(request: AskRequest, on_event=None) -> AskResponse:
         error_count=len(result.errors),
         sources=result.sources,
         charts=build_charts(result.observations),
+        usage=result.usage,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Rate limits: every question costs OpenAI (and maybe Exa) calls
+# ---------------------------------------------------------------------------
+
+client_limiter = SlidingWindowLimiter(window=60)
+daily_limiter = SlidingWindowLimiter(window=24 * 60 * 60)
+
+
+def _rate_limited(http_request: Request) -> JSONResponse | None:
+    """Return a 429 response when this question is over a limit, else None."""
+
+    client = http_request.client.host if http_request.client else "unknown"
+
+    wait = client_limiter.hit(client, ask_rate_limit())
+    message = "Too many questions. Please wait a moment and try again."
+
+    if wait is None:
+        wait = daily_limiter.hit("all", ask_daily_limit())
+        message = "The demo has reached its daily question limit. Try again later."
+
+    if wait is None:
+        return None
+
+    logger.warning("Rate limit hit by %s; retry in %.0fs", client, wait)
+
+    return JSONResponse(
+        status_code=429,
+        content={"detail": message},
+        headers={"Retry-After": str(max(1, math.ceil(wait)))},
     )
 
 
 @app.post(
     "/ask",
     response_model=AskResponse,
-    responses={500: {"description": "The agent failed; see error_id in the logs."}},
+    responses={
+        429: {"description": "Rate limit reached; see Retry-After."},
+        500: {"description": "The agent failed; see error_id in the logs."},
+    },
 )
-def ask_agent(request: AskRequest) -> AskResponse | JSONResponse:
+def ask_agent(request: AskRequest, http_request: Request) -> AskResponse | JSONResponse:
     """Run the BI agent for a user question."""
+
+    if limited := _rate_limited(http_request):
+        return limited
 
     try:
         return _answer(request)
@@ -184,8 +227,10 @@ def _sse(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
 
 
-@app.post("/ask/stream")
-def ask_agent_stream(request: AskRequest) -> StreamingResponse:
+@app.post("/ask/stream", response_model=None)
+def ask_agent_stream(
+    request: AskRequest, http_request: Request
+) -> StreamingResponse | JSONResponse:
     """
     Run the agent and stream Server-Sent Events while it works.
 
@@ -193,6 +238,9 @@ def ask_agent_stream(request: AskRequest) -> StreamingResponse:
     stages, then exactly one `result` (the /ask response body) or `error`
     ({detail, error_id, status}).
     """
+
+    if limited := _rate_limited(http_request):
+        return limited
 
     events: queue.Queue[tuple[str, dict] | None] = queue.Queue()
 

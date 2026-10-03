@@ -126,6 +126,70 @@ def max_saved_runs() -> int:
     return limit
 
 
+def _non_negative_int(name: str, default: str) -> int:
+    value = os.getenv(name, default).strip()
+
+    try:
+        number = int(value)
+    except ValueError:
+        raise ConfigError(f"{name} must be an integer, not {value!r}.") from None
+
+    if number < 0:
+        raise ConfigError(f"{name} must be 0 (off) or more.")
+
+    return number
+
+
+def ask_rate_limit() -> int:
+    """Questions per minute one client may ask; 0 turns the limit off."""
+
+    return _non_negative_int("ASK_RATE_LIMIT", "10")
+
+
+def ask_daily_limit() -> int:
+    """Questions per day across all clients; 0 (the default) means no cap."""
+
+    return _non_negative_int("ASK_DAILY_LIMIT", "0")
+
+
+def _price(name: str) -> float | None:
+    value = os.getenv(name, "").strip()
+
+    if not value:
+        return None
+
+    try:
+        price = float(value)
+    except ValueError:
+        raise ConfigError(f"{name} must be a number, not {value!r}.") from None
+
+    if price < 0:
+        raise ConfigError(f"{name} must not be negative.")
+
+    return price
+
+
+def openai_prices() -> tuple[float, float, float] | None:
+    """
+    USD per million (input, cached input, output) tokens for OPENAI_MODEL,
+    or None when the input or output price is not set. Cached input
+    defaults to the input price.
+    """
+
+    input_price = _price("OPENAI_INPUT_PRICE_PER_M")
+    cached_price = _price("OPENAI_CACHED_INPUT_PRICE_PER_M")
+    output_price = _price("OPENAI_OUTPUT_PRICE_PER_M")
+
+    if input_price is None or output_price is None:
+        return None
+
+    return (
+        input_price,
+        cached_price if cached_price is not None else input_price,
+        output_price,
+    )
+
+
 def warm_up_on_startup() -> bool:
     """Whether the API loads models and data before serving requests."""
 
@@ -153,6 +217,12 @@ def validate_settings() -> None:
             f"Missing required settings: {', '.join(missing)}. "
             "Set them in .env (see .env.example)."
         )
+
+    # Malformed optional numbers should also fail at startup, not per request.
+    max_saved_runs()
+    ask_rate_limit()
+    ask_daily_limit()
+    openai_prices()
 
 
 # ---------------------------------------------------------------------------

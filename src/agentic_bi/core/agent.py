@@ -41,6 +41,7 @@ from agentic_bi.core.prompts import (
 from agentic_bi.core.reliability import execute_with_retry
 from agentic_bi.core.run_store import RunStore, default_run_store
 from agentic_bi.core.state import AgentState
+from agentic_bi.core.usage import MeteredClient, UsageMeter
 from agentic_bi.skills.loader import load_skill
 from agentic_bi.skills.router import select_skill
 from agentic_bi.tools.delta_current_info import answer_current_delta_question
@@ -101,6 +102,9 @@ class AgentResult:
     errors: list[dict[str, Any]] = field(default_factory=list)
 
     trace: AgentTrace | None = None
+
+    # Tokens, estimated cost and model/tool time (see core/usage.py).
+    usage: dict[str, Any] | None = None
 
 
 # -------------------------------------------------------------------
@@ -205,6 +209,9 @@ class AgentRun:
     verbose: bool = False
     intent: str | None = None
 
+    # Records every model call made through `client`.
+    meter: UsageMeter = field(default_factory=UsageMeter)
+
     # Optional progress listener, e.g. the streaming API. Receives every
     # trace event as it happens.
     on_event: Callable[[str, dict[str, Any]], None] | None = None
@@ -283,19 +290,25 @@ def run_agent(
     `on_event` receives progress events while the run is in flight.
     """
 
+    meter = UsageMeter()
+
     run = AgentRun(
         state=AgentState(goal=question),
         trace=create_trace(question=question),
-        client=client if client is not None else get_openai_client(),
+        client=MeteredClient(
+            client if client is not None else get_openai_client(), meter
+        ),
         store=store if store is not None else default_run_store(),
         tools=tools if tools is not None else TOOL_REGISTRY,
         verbose=verbose,
         on_event=on_event,
+        meter=meter,
     )
 
     run.event("agent_started")
 
     if history:
+        run.meter.stage = "follow-up"
         standalone = condense_question(question, history, client=run.client)
 
         if standalone != question:
@@ -322,6 +335,8 @@ def interaction_gate(run: AgentRun) -> AgentResult | None:
     requests and current-information questions; None otherwise.
     """
 
+    run.meter.stage = "routing"
+
     interaction = classify_interaction(run.state.goal, client=run.client)
 
     run.intent = interaction.intent
@@ -333,6 +348,8 @@ def interaction_gate(run: AgentRun) -> AgentResult | None:
     run.log("Interaction intent:", interaction.intent)
 
     if interaction.intent == "current_airline_info":
+        run.meter.stage = "web answer"
+
         current_info = answer_current_delta_question(run.state.goal, client=run.client)
 
         run.state.stop_reason = "current_airline_info"
@@ -393,6 +410,8 @@ def run_tool_loop(run: AgentRun) -> str:
     """
 
     state = run.state
+
+    run.meter.stage = "agent"
 
     skill_content = load_skill(state.selected_skill) if state.selected_skill else ""
 
@@ -697,15 +716,29 @@ def finish_run(
 
     run.checkpoint("final")
 
+    finish_trace(run.trace, stop_reason=state.stop_reason)
+
+    tool_seconds = sum(
+        event.data.get("duration_seconds") or 0.0
+        for event in run.trace.events
+        if event.event_type == "tool_completed"
+    )
+
+    usage = run.meter.summary(
+        tool_seconds=tool_seconds, total_seconds=run.trace.duration_seconds
+    )
+
+    run.trace.usage = usage
+
     run.event(
         "agent_finished",
         stop_reason=state.stop_reason,
         step_count=state.step_count,
         tool_call_count=state.tool_call_count,
         error_count=len(state.errors),
+        total_tokens=usage["total_tokens"],
+        estimated_cost_usd=usage["estimated_cost_usd"],
     )
-
-    finish_trace(run.trace, stop_reason=state.stop_reason)
 
     trace_path = run.store.save_trace(run.trace)
 
@@ -730,6 +763,7 @@ def finish_run(
         observations=list(state.observations),
         errors=list(state.errors),
         trace=run.trace,
+        usage=usage,
     )
 
 

@@ -119,7 +119,7 @@ M24 was where things went wrong. A patch script meant to edit `core/agent.py` ov
 | 5 | API errors with IDs, input limits, model warm-up, shared eval code, 141 tests |
 | 6 | Two analytics tools, charts, on-time matching the DOT report exactly |
 | 7 | Streamed progress, follow-up questions, answer feedback |
-| 8 | Docker (CPU-only torch, 2.8 GB) and GitHub Actions CI |
+| 8 | Docker (CPU-only torch, 2.8 GB), GitHub Actions CI, rate limits on `/ask`, tokens, cost and latency per answer |
 
 Every paid eval stayed at its pre-refactor score throughout.
 

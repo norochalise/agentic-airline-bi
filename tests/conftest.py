@@ -22,10 +22,22 @@ def function_call(name, arguments, call_id):
     )
 
 
-def model_response(response_id, output=None, output_text=""):
-    """A Responses API response with optional function calls."""
+def model_response(response_id, output=None, output_text="", usage=None):
+    """A Responses API response with optional function calls and usage."""
 
-    return SimpleNamespace(id=response_id, output=output or [], output_text=output_text)
+    return SimpleNamespace(
+        id=response_id, output=output or [], output_text=output_text, usage=usage
+    )
+
+
+def token_usage(input_tokens, output_tokens, cached_tokens=0):
+    """A Responses API `usage` object."""
+
+    return SimpleNamespace(
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        input_tokens_details=SimpleNamespace(cached_tokens=cached_tokens),
+    )
 
 
 class FakeResponses:
@@ -74,3 +86,12 @@ def run_store():
 def _test_model(monkeypatch):
     # openai_model() must resolve, but no test reaches the real API.
     monkeypatch.setenv("OPENAI_MODEL", "test-model")
+    # API tests post many questions from one client; rate-limit tests opt in.
+    monkeypatch.setenv("ASK_RATE_LIMIT", "0")
+    # Cost estimates only when a test sets prices, whatever .env says.
+    for name in (
+        "OPENAI_INPUT_PRICE_PER_M",
+        "OPENAI_CACHED_INPUT_PRICE_PER_M",
+        "OPENAI_OUTPUT_PRICE_PER_M",
+    ):
+        monkeypatch.delenv(name, raising=False)

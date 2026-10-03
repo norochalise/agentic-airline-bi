@@ -213,6 +213,20 @@ A short log of how the Airline Intelligence Assistant went from "broken after a 
 
 **Lesson:** check what your dependencies pull in. The largest part of the image came from GPU libraries for hardware the app never uses.
 
+**Rate limiting.** On a public demo, every question spends real money on OpenAI and Exa calls.
+- `/ask` and `/ask/stream` allow 10 questions per minute per client (`ASK_RATE_LIMIT`). `ASK_DAILY_LIMIT` adds an optional cap across all visitors, so a burst of traffic cannot run up the bill.
+- Over a limit, the endpoints return 429 with `Retry-After` before any model call. The UI already shows the message.
+- The limiter is a small in-memory sliding window instead of a new dependency, which fits a single-instance demo.
+- Invalid questions are rejected first and do not use up the budget.
+
+**Cost and latency per answer.** Each answer now shows its tokens, an estimated cost and where the time went.
+- One wrapper around the OpenAI client (`MeteredClient`) times every model call and reads its token usage. The follow-up rewriter, the router, the web answerer and the tool loop all already used the run's client, so none of them changed.
+- Calls are grouped by stage. Tool time comes from the trace's existing `tool_completed` durations.
+- Prices are settings, not a table in the code: model prices change, and the model is configurable. Without prices, the UI shows tokens only.
+- The run details panel shows a "where the time went" bar. It usually shows that model calls, not pandas or retrieval, dominate the wait.
+
+**A CI trap found on the way.** Ruff 0.16 also formats Python code blocks inside markdown. It would have rewrapped the hand-aligned `ToolSpec` example in `ARCHITECTURE.md` and failed `ruff format --check` on the first push. Markdown is now excluded from the formatter.
+
 ---
 
 ## How we verified without burning API money
@@ -226,4 +240,4 @@ A short log of how the Airline Intelligence Assistant went from "broken after a 
 
 ## What's next
 
-8. **Ship it (part 2):** push to GitHub so CI runs, then a live demo with rate limiting.
+8. **Ship it (part 2):** push to GitHub so CI runs, then deploy the live demo.

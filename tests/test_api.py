@@ -263,3 +263,41 @@ def test_feedback_rejects_bad_input():
         ).status_code
         == 422
     )
+
+
+def test_ask_returns_usage_when_the_run_reports_it():
+    result = fake_result()
+    result.usage = {
+        "model_calls": 2,
+        "input_tokens": 900,
+        "cached_input_tokens": 0,
+        "output_tokens": 100,
+        "total_tokens": 1000,
+        "estimated_cost_usd": 0.0026,
+        "duration_seconds": 2.5,
+        "model_seconds": 2.1,
+        "tool_seconds": 0.2,
+        "stages": [
+            {
+                "stage": "agent",
+                "calls": 2,
+                "seconds": 2.1,
+                "input_tokens": 900,
+                "output_tokens": 100,
+            }
+        ],
+    }
+
+    with patch("agentic_bi.api.app.run_agent", return_value=result):
+        body = client.post("/ask", json={"question": "Top airport?"}).json()
+
+    assert body["usage"]["total_tokens"] == 1000
+    assert body["usage"]["estimated_cost_usd"] == 0.0026
+    assert body["usage"]["stages"][0]["stage"] == "agent"
+
+
+def test_ask_usage_is_null_when_missing():
+    with patch("agentic_bi.api.app.run_agent", return_value=fake_result()):
+        body = client.post("/ask", json={"question": "Top airport?"}).json()
+
+    assert body["usage"] is None

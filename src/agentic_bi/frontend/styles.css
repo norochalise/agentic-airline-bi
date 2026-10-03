@@ -1071,6 +1071,80 @@ a.source-chip:hover {
     overflow-wrap: anywhere;
 }
 
+.time-breakdown {
+    margin-top: 10px;
+}
+
+.time-title {
+    margin-bottom: 6px;
+
+    color: var(--text-faint);
+    font-size: 0.72rem;
+}
+
+.time-bar {
+    display: flex;
+    gap: 2px;
+
+    height: 10px;
+    overflow: hidden;
+
+    border-radius: 999px;
+    background: var(--surface-muted);
+}
+
+.time-segment {
+    min-width: 3px;
+    height: 100%;
+}
+
+.time-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 14px;
+
+    margin: 8px 0 0;
+    padding: 0;
+
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    list-style: none;
+}
+
+.time-legend li {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.time-swatch {
+    width: 8px;
+    height: 8px;
+
+    border-radius: 2px;
+}
+
+.tone-model-0 {
+    background: var(--accent);
+}
+
+.tone-model-1 {
+    background: var(--web-text);
+    opacity: 0.6;
+}
+
+.tone-model-2 {
+    background: var(--doc-text);
+}
+
+.tone-tools {
+    background: var(--data-text);
+}
+
+.tone-other {
+    background: var(--border-strong);
+}
+
 .run-id {
     margin-top: 8px;
 

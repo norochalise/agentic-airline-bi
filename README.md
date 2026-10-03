@@ -16,7 +16,7 @@
 | Current information | *Can I bring my dog in the cabin?* | Official-web search only |
 | Greetings / out of scope | *Write me a poem* | Short direct reply; no tools run |
 
-Every answer comes with labelled sources (document page, dataset or URL) and its run details: route, steps, tool calls and run ID.
+Every answer comes with labelled sources (document page, dataset or URL) and its run details: route, steps, tool calls, run ID, **tokens used, estimated cost, and where the time went** (each model stage vs. tools).
 
 - **Live progress:** the chat shows each step as it happens ("Searching company documents…", "Analyzing flight data…"), streamed from `POST /ask/stream` as Server-Sent Events.
 - **Follow-up questions:** the browser sends the last three exchanges, and a short model call rewrites "and for JFK?" into a standalone question. The answer shows how it was understood.
@@ -65,7 +65,7 @@ Retrieval, on 10 source-verified cases with strict answer-bearing labels:
 | MRR@5 | 0.600 | **0.750** |
 | Expanded-context evidence coverage | — | **10/10** |
 
-There are 170 `pytest` tests, and they make no paid API calls. The on-time metric reproduces the DOT Air Travel Consumer Report for July 2026: 71.7% for the Delta network and 71.9% for Delta mainline.
+There are 192 `pytest` tests, and they make no paid API calls. The on-time metric reproduces the DOT Air Travel Consumer Report for July 2026: 71.7% for the Delta network and 71.9% for Delta mainline.
 
 Methodology: [`docs/EVALUATION.md`](docs/EVALUATION.md).
 
@@ -103,6 +103,11 @@ docker compose up --build   # http://localhost:8000
 | `TOOL_TRANSPORT` | no (`inprocess`) | `mcp` runs the flight tool through the MCP server |
 | `PERSIST_RUNS` / `MAX_SAVED_RUNS` | no (`true` / `500`) | Save traces and checkpoints; keep the newest N runs |
 | `WARM_UP_ON_STARTUP` | no (`true`) | Load models before serving |
+| `ASK_RATE_LIMIT` | no (`10`) | Questions per minute per client; `0` turns it off |
+| `OPENAI_INPUT_PRICE_PER_M` / `OPENAI_OUTPUT_PRICE_PER_M` | no | USD per million tokens for your model; enables the cost estimate (`OPENAI_CACHED_INPUT_PRICE_PER_M` optional) |
+| `ASK_DAILY_LIMIT` | no (`0`, off) | Questions per day across all clients; caps API spend on a public demo |
+
+Behind a hosting proxy, also set `FORWARDED_ALLOW_IPS=*` so uvicorn trusts `X-Forwarded-For` and the limit applies per visitor rather than to the proxy.
 
 ## Tests and evaluations
 
@@ -154,6 +159,7 @@ scripts/        index-building scripts
 - The document corpus is four documents (about 700 chunks).
 - Checkpoints restore application state, not an interrupted model conversation.
 - The main workflow is read-only. A mock write action shows the approval guard.
+- Rate limits are kept in memory, so they assume a single server instance. Cost estimates rely on the prices you configure.
 
 ## Documentation
 

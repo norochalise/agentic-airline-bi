@@ -30,7 +30,7 @@ How the assistant is measured, what the numbers are, and what they do and don't 
 | Flight analytics | `uv run abi-eval-analytics` | 8 | Skill, tool and key arguments for the analytics tools | paid |
 | Retrieval (FAISS) | `uv run abi-eval-retrieval` | 10 | Hit@K and MRR against verified chunk labels | free |
 | Retrieval (reranked) | `uv run abi-eval-reranked` | 10 | FAISS vs reranked on strict labels, plus context coverage | free |
-| Software | `uv run pytest` | 173 tests | Deterministic contracts, fake clients | free |
+| Software | `uv run pytest` | 192 tests | Deterministic contracts, fake clients | free |
 
 The case files live in `evals/`:
 - `agent_cases.json`
@@ -203,15 +203,15 @@ The October 2026 refactor (see [`REFACTOR_JOURNEY.md`](REFACTOR_JOURNEY.md)) was
 
 ## 10. Software tests
 
-`uv run pytest` runs 173 tests in about 3 seconds, with no API keys. CI runs the same suite on every push.
+`uv run pytest` runs 192 tests in about 3 seconds, with no API keys. CI runs the same suite on every push.
 
 | Area | Examples |
 |---|---|
-| Agent loop | Forced final answer at budget, repeated-call stop, invalid arguments returned to the model, web-before-private guard, follow-up rewriting, a failing progress listener not stopping the run |
+| Agent loop | Token, cost and stage-timing totals per run, forced final answer at budget, repeated-call stop, invalid arguments returned to the model, web-before-private guard, follow-up rewriting, a failing progress listener not stopping the run |
 | Tools and registry | Generated strict JSON, per-skill tool offers, write tool never offered, MCP error classification, in-process vs MCP transport |
 | Data | Ranking, filters and calendar order on hand-built data; the DOT on-time figures on the real data |
 | RAG | Chunk overlap, page-aware PDF ingestion (with a blank page), whole-word routing |
-| API | Clean 500/503 errors without internals, question and history limits, SSE event order, feedback storage, startup warm-up switch, cache headers |
+| API | Clean 500/503 errors without internals, question and history limits, SSE event order, feedback storage, startup warm-up switch, cache headers, 429 rate limits with `Retry-After`, `usage` in the response |
 | Packaging | Dockerfile model names match `config.py`; `.dockerignore` excludes secrets |
 
 ---
@@ -224,4 +224,4 @@ The October 2026 refactor (see [`REFACTOR_JOURNEY.md`](REFACTOR_JOURNEY.md)) was
 - **Narrow answer checks:** the end-to-end answer checks look for required facts; they don't judge the whole answer's quality or faithfulness.
 - **Untested at scale:** there is no load, latency-under-concurrency or cost-regression testing.
 
-**Next measurements:** a larger held-out question set, citation correctness and faithfulness scoring, latency and token budgets per question type, and using the 👍/👎 feedback to find new failure cases.
+**Next measurements:** a larger held-out question set, citation correctness and faithfulness scoring, latency and token budgets per question type (each run now records its tokens, cost and stage timings, so this is a matter of aggregating traces), and using the 👍/👎 feedback to find new failure cases.

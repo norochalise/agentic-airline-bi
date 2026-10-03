@@ -271,6 +271,8 @@ Every run produces a structured trace (`core/observability.py`) with a run ID, t
 - `tool_started` / `tool_completed`, `guard_triggered`
 - `checkpoint_saved`, `agent_finished`
 
+**Usage and latency.** `run_agent` wraps the OpenAI client in a `MeteredClient` (`core/usage.py`), so every `responses.create` call is timed and its token usage recorded, with no change to the call sites. Calls are grouped by stage (`follow-up`, `routing`, `web answer`, `agent`). `finish_run` adds tool time from the `tool_completed` events and stores the summary on `AgentTrace.usage` and `AgentResult.usage`: tokens in, cached and out, model calls, model, tool and total seconds, and an estimated cost when `OPENAI_INPUT_PRICE_PER_M` and `OPENAI_OUTPUT_PRICE_PER_M` are set. Prices are settings because they change and the model is configurable. Exa searches are counted, not priced.
+
 Application-state checkpoints are saved after each successful tool observation and at the end. `restore_agent_state` rebuilds `AgentState`. This restores application state; it is not durable resumption of an interrupted model conversation.
 
 Storage goes through a `RunStore` (`core/run_store.py`):
@@ -294,10 +296,13 @@ Storage goes through a `RunStore` (`core/run_store.py`):
 - the route and stop reason
 - counters for steps, tool calls, searches and analyses
 - labelled sources and chart specs
+- `usage`: tokens, estimated cost and the time per stage (the UI draws it as a "where the time went" bar)
 
 **Failures.** `/ask` and `/ask/stream` share `_answer()`. A failure returns `{detail, error_id}`: 503 for missing configuration, 500 otherwise. The traceback is logged under the same ID and never sent to the client.
 
 **Startup.** The lifespan hook refuses to start without `OPENAI_API_KEY` and `OPENAI_MODEL`, and warns if `EXA_API_KEY` is missing. It then loads the FAISS index, embedding model, reranker and flight data (about 13 s cold), so the first user doesn't wait.
+
+**Rate limits.** Every question costs model calls, so `/ask` and `/ask/stream` check two in-memory sliding windows (`api/rate_limit.py`) after the request validates: `ASK_RATE_LIMIT` per client per minute and an optional `ASK_DAILY_LIMIT` across everyone. Over a limit, the endpoint returns 429 with `{detail}` and `Retry-After` before any agent work or stream starts. The state lives in one process, which suits a single-instance demo.
 
 **Streaming.** `/ask/stream` runs the agent in a worker thread. The agent's `on_event` listener feeds a queue that becomes SSE, and `api/progress.py` maps trace events to plain-language status lines.
 
@@ -339,6 +344,9 @@ Settings are read **at call time** through functions such as `openai_model()`, `
 | `TOOL_TRANSPORT` | `inprocess` (or `mcp`) |
 | `PERSIST_RUNS`, `MAX_SAVED_RUNS` | `true`, `500` |
 | `WARM_UP_ON_STARTUP` | `true` |
+| `ASK_RATE_LIMIT` | `10` per client per minute (`0` = off) |
+| `OPENAI_INPUT_PRICE_PER_M`, `OPENAI_OUTPUT_PRICE_PER_M`, `OPENAI_CACHED_INPUT_PRICE_PER_M` | unset (cost not shown); USD per million tokens |
+| `ASK_DAILY_LIMIT` | `0` (no cap); questions per day across all clients |
 
 ---
 
@@ -374,4 +382,5 @@ Settings are read **at call time** through functions such as `openai_model()`, `
 - Evaluation sets are small and frozen; results are not production accuracy.
 - Checkpoints restore application state, not an interrupted model conversation.
 - The main workflow is read-only; the write path is a mock that demonstrates the guard.
+- Rate limits live in one process's memory; several instances would need a shared store such as Redis.
 - Not affiliated with or endorsed by Delta Air Lines.

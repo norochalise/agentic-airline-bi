@@ -353,6 +353,85 @@ function plural(count, singular, pluralForm = `${singular}s`) {
 }
 
 
+function formatTokens(count) {
+    return count >= 1000 ? `${(count / 1000).toFixed(1)}k` : String(count);
+}
+
+
+function formatCost(usd) {
+    if (usd === 0) {
+        return "$0";
+    }
+
+    return usd < 0.01 ? `$${usd.toFixed(4)}` : `$${usd.toFixed(3)}`;
+}
+
+
+function formatSeconds(seconds) {
+    return `${(seconds ?? 0).toFixed(1)}s`;
+}
+
+
+// Where the time went: one segment per model stage, then tools, then
+// everything else (retrieval setup, checkpoints, network to the browser
+// excluded).
+function renderTimeBar(usage) {
+    const segments = usage.stages.map((stage) => ({
+        label: `${stage.stage} (${plural(stage.calls, "model call")})`,
+        kind: "model",
+        seconds: stage.seconds,
+    }));
+
+    if (usage.tool_seconds > 0) {
+        segments.push({ label: "tools", kind: "tools", seconds: usage.tool_seconds });
+    }
+
+    const accounted = segments.reduce((sum, segment) => sum + segment.seconds, 0);
+    const total = Math.max(usage.duration_seconds ?? accounted, accounted);
+
+    if (total - accounted > 0.05) {
+        segments.push({ label: "other", kind: "other", seconds: total - accounted });
+    }
+
+    if (total <= 0) {
+        return null;
+    }
+
+    const wrapper = element("div", "time-breakdown");
+    wrapper.appendChild(element("div", "time-title", "Where the time went"));
+
+    const bar = element("div", "time-bar");
+    const legend = element("ul", "time-legend");
+
+    segments.forEach((segment, index) => {
+        const tone = segment.kind === "model" ? `model-${index % 3}` : segment.kind;
+        const share = (segment.seconds / total) * 100;
+        const text = `${segment.label}: ${formatSeconds(segment.seconds)}`;
+
+        const piece = element("span", `time-segment tone-${tone}`);
+        piece.style.width = `${share}%`;
+        piece.title = text;
+        bar.appendChild(piece);
+
+        const item = element("li");
+        item.appendChild(element("span", `time-swatch tone-${tone}`));
+        item.appendChild(element("span", "", text));
+        legend.appendChild(item);
+    });
+
+    bar.setAttribute("role", "img");
+    bar.setAttribute(
+        "aria-label",
+        segments.map((s) => `${s.label} ${formatSeconds(s.seconds)}`).join(", ")
+    );
+
+    wrapper.appendChild(bar);
+    wrapper.appendChild(legend);
+
+    return wrapper;
+}
+
+
 function renderRunDetails(data, elapsedSeconds) {
     const details = element("details", "run-details");
     const summary = element("summary");
@@ -380,6 +459,16 @@ function renderRunDetails(data, elapsedSeconds) {
         parts.push(plural(data.web_search_count, "web search"));
     }
 
+    const usage = data.usage;
+
+    if (usage?.total_tokens) {
+        parts.push(`${formatTokens(usage.total_tokens)} tokens`);
+    }
+
+    if (usage?.estimated_cost_usd != null) {
+        parts.push(`~${formatCost(usage.estimated_cost_usd)}`);
+    }
+
     parts.push(`${elapsedSeconds.toFixed(1)}s`);
 
     summary.appendChild(element("span", "", parts.join(" · ")));
@@ -398,6 +487,23 @@ function renderRunDetails(data, elapsedSeconds) {
         ["Errors", data.error_count ?? 0],
     ];
 
+    if (usage) {
+        metrics.push(
+            [
+                "Tokens (in / out)",
+                `${formatTokens(usage.input_tokens)} / ${formatTokens(usage.output_tokens)}`,
+            ],
+            [
+                "Est. cost",
+                usage.estimated_cost_usd != null
+                    ? formatCost(usage.estimated_cost_usd)
+                    : "prices not set",
+            ],
+            ["Model time", formatSeconds(usage.model_seconds)],
+            ["Tool time", formatSeconds(usage.tool_seconds)],
+        );
+    }
+
     for (const [label, value] of metrics) {
         const metric = element("div", "run-metric");
         metric.appendChild(element("span", "", label));
@@ -406,6 +512,12 @@ function renderRunDetails(data, elapsedSeconds) {
     }
 
     details.appendChild(grid);
+
+    const timeBar = usage ? renderTimeBar(usage) : null;
+
+    if (timeBar) {
+        details.appendChild(timeBar);
+    }
 
     if (data.run_id) {
         details.appendChild(element("div", "run-id", `Run ID ${data.run_id}`));

@@ -86,6 +86,45 @@ class ChartSpec(BaseModel):
     rows: list[ChartRow]
 
 
+class StageUsage(BaseModel):
+    """Model calls, time and tokens for one stage of a run."""
+
+    stage: str
+
+    calls: int
+
+    seconds: float
+
+    input_tokens: int
+
+    output_tokens: int
+
+
+class RunUsage(BaseModel):
+    """Tokens, estimated cost and where the time went for one answer."""
+
+    model_calls: int
+
+    input_tokens: int
+
+    cached_input_tokens: int
+
+    output_tokens: int
+
+    total_tokens: int
+
+    # None when OPENAI_*_PRICE_PER_M are not configured.
+    estimated_cost_usd: float | None = None
+
+    duration_seconds: float | None = None
+
+    model_seconds: float
+
+    tool_seconds: float
+
+    stages: list[StageUsage] = Field(default_factory=list)
+
+
 class AskResponse(BaseModel):
     """
     Structured response returned by the agent API.
@@ -117,6 +156,8 @@ class AskResponse(BaseModel):
     sources: list[SourceReference] = Field(default_factory=list)
 
     charts: list[ChartSpec] = Field(default_factory=list)
+
+    usage: RunUsage | None = None
 
 
 class FeedbackRequest(BaseModel):

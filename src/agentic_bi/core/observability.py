@@ -38,6 +38,9 @@ class AgentTrace:
     duration_seconds: float | None = None
     stop_reason: str | None = None
 
+    # Token, cost and timing summary (core/usage.py).
+    usage: dict[str, Any] | None = None
+
 
 class ExecutionTimer:
     """
@@ -141,4 +144,5 @@ def load_trace(trace_path: Path) -> AgentTrace:
         finished_at=data.get("finished_at"),
         duration_seconds=data.get("duration_seconds"),
         stop_reason=data.get("stop_reason"),
+        usage=data.get("usage"),
     )
