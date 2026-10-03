@@ -192,6 +192,10 @@ def execute_tool(
         ) from exc
 
 
+# Trace events whose duration_seconds counts as tool time.
+TIMED_TOOL_EVENTS = ("tool_completed", "current_airline_info_retrieved")
+
+
 # -------------------------------------------------------------------
 # Run context
 # -------------------------------------------------------------------
@@ -349,8 +353,18 @@ def interaction_gate(run: AgentRun) -> AgentResult | None:
 
     if interaction.intent == "current_airline_info":
         run.meter.stage = "web answer"
+        model_calls_before = len(run.meter.calls)
+
+        timer = ExecutionTimer()
+        timer.start()
 
         current_info = answer_current_delta_question(run.state.goal, client=run.client)
+
+        # Everything but the answer-writing model call is the web search.
+        web_model_seconds = sum(
+            call.seconds for call in run.meter.calls[model_calls_before:]
+        )
+        search_seconds = max(0.0, timer.stop() - web_model_seconds)
 
         run.state.stop_reason = "current_airline_info"
         run.counts[WEB_SEARCH_TOOL] += 1
@@ -361,6 +375,7 @@ def interaction_gate(run: AgentRun) -> AgentResult | None:
             source_type=current_info.get("source_type"),
             provider=current_info.get("provider"),
             source_count=len(current_info.get("sources", [])),
+            duration_seconds=search_seconds,
         )
 
         return finish_run(
@@ -721,7 +736,7 @@ def finish_run(
     tool_seconds = sum(
         event.data.get("duration_seconds") or 0.0
         for event in run.trace.events
-        if event.event_type == "tool_completed"
+        if event.event_type in TIMED_TOOL_EVENTS
     )
 
     usage = run.meter.summary(

@@ -1,5 +1,7 @@
 """Token usage, cost estimates and timing per run."""
 
+import time
+
 import pytest
 
 import agentic_bi.core.agent as agent_module
@@ -159,3 +161,27 @@ def test_run_reports_usage_for_every_stage(monkeypatch, run_store):
 
     finished = [e for e in result.trace.events if e.event_type == "agent_finished"]
     assert finished[0].data["total_tokens"] == 1155
+
+
+def test_official_web_search_counts_as_tool_time(monkeypatch, run_store):
+    monkeypatch.setattr(
+        agent_module,
+        "classify_interaction",
+        lambda question, client=None: InteractionDecision(
+            intent="current_airline_info", reason="Test routing."
+        ),
+    )
+
+    def answer(question, client=None):
+        time.sleep(0.05)  # stands in for the Exa search
+        client.responses.create(model="m", input=question)
+        return {"answer": "Yes, small dogs.", "sources": []}
+
+    monkeypatch.setattr(agent_module, "answer_current_delta_question", answer)
+
+    client = FakeClient([model_response("a", usage=token_usage(300, 40))])
+
+    result = run_agent("Can I bring my dog?", client=client, store=run_store)
+
+    assert result.usage["tool_seconds"] >= 0.04
+    assert [stage["stage"] for stage in result.usage["stages"]] == ["web answer"]
